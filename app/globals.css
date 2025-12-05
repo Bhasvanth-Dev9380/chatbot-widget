@@ -1,0 +1,224 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(0.99 0.005 264);
+  --foreground: oklch(0.15 0.02 264);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.15 0.02 264);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.15 0.02 264);
+  --primary: oklch(0.55 0.22 264);
+  --primary-foreground: oklch(0.99 0.005 264);
+  --secondary: oklch(0.96 0.01 264);
+  --secondary-foreground: oklch(0.15 0.02 264);
+  --muted: oklch(0.97 0.005 264);
+  --muted-foreground: oklch(0.50 0.01 264);
+  --accent: oklch(0.94 0.015 264);
+  --accent-foreground: oklch(0.15 0.02 264);
+  --destructive: oklch(0.63 0.19 23.03);
+  --destructive-foreground: oklch(0.99 0.005 264);
+  --border: oklch(0.92 0.01 264);
+  --input: oklch(0.96 0.01 264);
+  --ring: oklch(0.55 0.22 264);
+  --chart-1: oklch(0.81 0.17 75.35);
+  --chart-2: oklch(0.55 0.22 264.53);
+  --chart-3: oklch(0.72 0.15 160);
+  --chart-4: oklch(0.75 0.18 340);
+  --chart-5: oklch(0.65 0.20 50);
+  --sidebar: oklch(0.99 0.005 264);
+  --sidebar-foreground: oklch(0.15 0.02 264);
+  --sidebar-primary: oklch(0.55 0.22 264);
+  --sidebar-primary-foreground: oklch(0.99 0.005 264);
+  --sidebar-accent: oklch(0.94 0.015 264);
+  --sidebar-accent-foreground: oklch(0.15 0.02 264);
+  --sidebar-border: oklch(0.92 0.01 264);
+  --sidebar-ring: oklch(0.55 0.22 264);
+  --font-sans: Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Geist Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0px;
+  --shadow-y: 1px;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.18;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+  --tracking-normal: 0em;
+  --spacing: 0.25rem;
+}
+
+.dark {
+  --background: oklch(0.12 0.015 264);
+  --foreground: oklch(0.98 0.005 264);
+  --card: oklch(0.16 0.015 264);
+  --card-foreground: oklch(0.98 0.005 264);
+  --popover: oklch(0.16 0.015 264);
+  --popover-foreground: oklch(0.98 0.005 264);
+  --primary: oklch(0.65 0.24 264);
+  --primary-foreground: oklch(0.98 0.005 264);
+  --secondary: oklch(0.22 0.015 264);
+  --secondary-foreground: oklch(0.98 0.005 264);
+  --muted: oklch(0.20 0.015 264);
+  --muted-foreground: oklch(0.70 0.01 264);
+  --accent: oklch(0.28 0.02 264);
+  --accent-foreground: oklch(0.98 0.005 264);
+  --destructive: oklch(0.69 0.20 23.91);
+  --destructive-foreground: oklch(0.98 0.005 264);
+  --border: oklch(0.26 0.015 264);
+  --input: oklch(0.22 0.015 264);
+  --ring: oklch(0.65 0.24 264);
+  --chart-1: oklch(0.81 0.17 75.35);
+  --chart-2: oklch(0.65 0.24 264);
+  --chart-3: oklch(0.65 0.18 160);
+  --chart-4: oklch(0.70 0.20 340);
+  --chart-5: oklch(0.68 0.22 50);
+  --sidebar: oklch(0.16 0.015 264);
+  --sidebar-foreground: oklch(0.98 0.005 264);
+  --sidebar-primary: oklch(0.65 0.24 264);
+  --sidebar-primary-foreground: oklch(0.98 0.005 264);
+  --sidebar-accent: oklch(0.28 0.02 264);
+  --sidebar-accent-foreground: oklch(0.98 0.005 264);
+  --sidebar-border: oklch(0.26 0.015 264);
+  --sidebar-ring: oklch(0.65 0.24 264);
+  --font-sans: Geist, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: Geist Mono, monospace;
+  --radius: 0.5rem;
+  --shadow-x: 0px;
+  --shadow-y: 1px;
+  --shadow-blur: 2px;
+  --shadow-spread: 0px;
+  --shadow-opacity: 0.18;
+  --shadow-color: hsl(0 0% 0%);
+  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.09);
+  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 1px 2px -1px hsl(0 0% 0% / 0.18);
+  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 2px 4px -1px hsl(0 0% 0% / 0.18);
+  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 4px 6px -1px hsl(0 0% 0% / 0.18);
+  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.18), 0px 8px 10px -1px hsl(0 0% 0% / 0.18);
+  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.45);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-2xs: var(--shadow-2xs);
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+  --shadow-2xl: var(--shadow-2xl);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    letter-spacing: var(--tracking-normal);
+  }
+}
+
+@layer base {
+  button:not([disabled]),
+  [role="button"]:not([disabled]) {
+    cursor: pointer;
+  }
+}
+
+/* React Flow node selection styles */
+.react-flow__node.selected #base-node {
+  @apply ring-3 ring-muted-foreground/25 shadow-lg;
+}
+
+/* in your globals.css */
+
+.react-flow__panel,
+.react-flow__minimap {
+  background-color: var(--card) !important;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+
+/* React Flow Controls – theme aware */
+
+/* Optional: make the wrapper itself transparent */
+.react-flow__controls {
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* The actual buttons (the white squares you see) */
+.react-flow__controls-button {
+  background-color: var(--card) !important;
+  color: var(--card-foreground) !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Hover / active states (optional but nice) */
+.react-flow__controls-button:hover {
+  background-color: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+}
+
+.react-flow__controls-button:active {
+  transform: translateY(1px);
+}
