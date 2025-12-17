@@ -2,8 +2,8 @@
 import { useState,useEffect } from "react";
 import { useSetAtom, useAtomValue } from "jotai";
 import {  LoaderIcon } from "lucide-react";
-import { contactSessionIdAtomFamily, errorMessageAtom, 
-  loadingMessageAtom, organizationIdAtom, screenAtom ,vapiSecretsAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
+import { chatbotIdAtom, contactSessionIdAtomFamily, errorMessageAtom, 
+  loadingMessageAtom, organizationIdAtom, screenAtom ,vapiSecretsAtom, widgetSettingsAtom, type WidgetSettings } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { api } from "../../../../convex/_generated/api";
 import { useAction,useMutation, useQuery } from "convex/react";
@@ -14,10 +14,12 @@ import { useAction,useMutation, useQuery } from "convex/react";
 type InitStep = "org" | "session" | "settings" | "vapi" | "done";
 
 
-export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string | null }
+export const WidgetLoadingScreen = ({ organizationId, chatbotId }: { organizationId: string | null, chatbotId?: string | null }
 ) => {
   const [step, setStep] = useState<InitStep>("org");
   const [sessionValid, setSessionValid] = useState(false);
+
+  console.log('[WidgetLoadingScreen] Received props:', { organizationId, chatbotId });
 
   const loadingMessage = useAtomValue(loadingMessageAtom);
   const setWidgetSettings = useSetAtom(widgetSettingsAtom);
@@ -25,6 +27,7 @@ export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string
   const setScreen = useSetAtom(screenAtom);
   const setLoadingMessage = useSetAtom(loadingMessageAtom);
   const setOrganizationId = useSetAtom(organizationIdAtom);
+  const setChatbotId = useSetAtom(chatbotIdAtom);
 
  const validateOrganizationResult = useQuery(
   api.public.organizations.validate,
@@ -34,7 +37,27 @@ export const WidgetLoadingScreen = ({ organizationId }: { organizationId: string
 const setVapiSecrets = useSetAtom(vapiSecretsAtom);
   const contactSessionId = useAtomValue(contactSessionIdAtomFamily(organizationId || ""));
 
+  // Fetch widget settings immediately for appearance
+  const widgetSettings = useQuery(
+    api.public.widgetSettings.getChatbotSettings,
+    organizationId
+      ? {
+          organizationId,
+          ...(chatbotId ? { chatbotId } : {}),
+        }
+      : "skip"
+  );
 
+  // Apply custom color as soon as settings are available
+  useEffect(() => {
+    if (widgetSettings?.appearance?.primaryColor) {
+      document.documentElement.style.setProperty('--primary', widgetSettings.appearance.primaryColor);
+    }
+    // Also set the widget settings atom early for the header to use
+    if (widgetSettings && step === "org") {
+      setWidgetSettings(toWidgetSettings(widgetSettings));
+    }
+  }, [widgetSettings?.appearance?.primaryColor, widgetSettings, step, setWidgetSettings]);
 
 
   useEffect(() => {
@@ -57,6 +80,12 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
   // query finished
   if (validateOrganizationResult.valid) {
     setOrganizationId(organizationId);
+    if (chatbotId) {
+      console.log('[WidgetLoadingScreen] Setting chatbotId from URL:', chatbotId);
+      setChatbotId(chatbotId);
+    } else {
+      console.log('[WidgetLoadingScreen] No chatbotId from URL');
+    }
     setStep("session");
   } else {
     setErrorMessage(
@@ -72,6 +101,8 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
   setScreen,
   setOrganizationId,
   setLoadingMessage,
+  chatbotId,
+  setChatbotId,
 ]);
 
 
@@ -108,22 +139,44 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
     }, [step, contactSessionId, validateContactSession, setLoadingMessage]);
 
     //step 3
-    const widgetSettings = useQuery(api.public.widgetSettings.getByOrganizationId, 
-        organizationId ? {
-          organizationId,
-        } : "skip",
-      );
 
       useEffect(() => {
         if (step !== "settings") {
           return;
         }
 
-        setLoadingMessage("Loading widget settings...");
+        setLoadingMessage("Loading chatbot settings...");
 
         if (widgetSettings !== undefined) {
-          setWidgetSettings(widgetSettings);
-         setStep("vapi");
+          const settings = toWidgetSettings(widgetSettings);
+          setWidgetSettings(settings);
+
+          console.log('[WidgetLoadingScreen] Got widgetSettings, chatbotId in settings:', (widgetSettings as any)?.chatbotId);
+          console.log('[WidgetLoadingScreen] Current chatbotId from URL prop:', chatbotId);
+
+          // Store chatbotId if it exists in the settings (and wasn't already set from URL)
+          if ((widgetSettings as any)?.chatbotId && !chatbotId) {
+            console.log('[WidgetLoadingScreen] Overriding with settings chatbotId:', (widgetSettings as any).chatbotId);
+            setChatbotId((widgetSettings as any).chatbotId);
+          }
+
+          // Send appearance settings to parent window (embed script)
+          const appearance = widgetSettings?.appearance;
+          if (appearance) {
+            window.parent.postMessage(
+              {
+                type: 'updateAppearance',
+                payload: {
+                  primaryColor: appearance?.primaryColor,
+                  size: appearance?.size || 'medium',
+                  launcherIconUrl: appearance?.logo?.url ?? null,
+                },
+              },
+              '*'
+            );
+          }
+
+          setStep("vapi");
         }
       }, [
         step,
@@ -131,7 +184,8 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
         setStep,
         setWidgetSettings,
         setLoadingMessage,
-
+        setChatbotId,
+        chatbotId,
       ]);
 
 
@@ -214,3 +268,31 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
     </>
   );
 };
+
+function toWidgetSettings(settings: any): WidgetSettings {
+  if (!settings) {
+    return {
+      chatbotName: "Support Assistant",
+      greetMessage: "Hi! How can I help you?",
+      defaultSuggestions: {},
+      vapiSettings: {},
+    };
+  }
+
+  return {
+    chatbotId: settings.chatbotId ?? undefined,
+    chatbotName: settings.chatbotName ?? "Support Assistant",
+    greetMessage: settings.greetMessage ?? "Hi! How can I help you?",
+    customSystemPrompt: settings.customSystemPrompt ?? undefined,
+    appearance: settings.appearance ?? undefined,
+    defaultSuggestions: {
+      suggestion1: settings.defaultSuggestions?.suggestion1 ?? undefined,
+      suggestion2: settings.defaultSuggestions?.suggestion2 ?? undefined,
+      suggestion3: settings.defaultSuggestions?.suggestion3 ?? undefined,
+    },
+    vapiSettings: {
+      assistantId: settings.vapiSettings?.assistantId ?? undefined,
+      phoneNumber: settings.vapiSettings?.phoneNumber ?? undefined,
+    },
+  };
+}

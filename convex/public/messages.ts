@@ -3,10 +3,11 @@ import { action, query } from "../_generated/server";
 import { components, internal } from "../_generated/api";
 import { supportAgent } from "../system/ai/agents/supportAgent";
 import { paginationOptsValidator } from "convex/server";
-import { resolveConversation } from "../system/ai/tools/resolveConversation";
-import { escalateConversation } from "../system/ai/tools/escalateConversation";
 import { saveMessage } from "@convex-dev/agent";
-import { search } from "../system/ai/tools/search";
+
+/* -------------------------------------------------
+   CREATE MESSAGE (WIDGET → AGENT)
+------------------------------------------------- */
 export const create = action({
   args: {
     prompt: v.string(),
@@ -14,11 +15,10 @@ export const create = action({
     contactSessionId: v.id("contactSessions"),
   },
   handler: async (ctx, args) => {
+    // ✅ Validate contact session
     const contactSession = await ctx.runQuery(
       internal.system.contactSessions.getOne,
-      {
-        contactSessionId: args.contactSessionId,
-      },
+      { contactSessionId: args.contactSessionId },
     );
 
     if (!contactSession || contactSession.expiresAt < Date.now()) {
@@ -28,11 +28,10 @@ export const create = action({
       });
     }
 
+    // ✅ Fetch conversation by thread
     const conversation = await ctx.runQuery(
       internal.system.conversations.getByThreadId,
-      {
-        threadId: args.threadId,
-      },
+      { threadId: args.threadId },
     );
 
     if (!conversation) {
@@ -49,26 +48,37 @@ export const create = action({
       });
     }
 
+    // 🔄 Refresh session (reference behavior)
     await ctx.runMutation(internal.system.contactSessions.refresh, {
       contactSessionId: args.contactSessionId,
     });
 
-    const shouldTriggerAgent = conversation.status === "unresolved"
+    const shouldTriggerAgent = conversation.status === "unresolved";
 
     if (shouldTriggerAgent) {
-      await supportAgent.generateText(
-        ctx,
-        { threadId: args.threadId },
-        {
-          prompt: args.prompt,
-          tools: {
-             resolveConversation: resolveConversation,
-                    escalateConversation: escalateConversation,
-                    search : search,
-          },
-        },
-      );
+      try {
+        // 🤖 Let support agent handle it - tools defined on agent
+        await supportAgent.generateText(
+          ctx,
+          { threadId: args.threadId },
+          { prompt: args.prompt },
+        );
+      } catch (error: any) {
+        // Handle corrupted thread state (tool_calls without responses)
+        if (error?.message?.includes("tool_calls") || error?.message?.includes("tool_call_id")) {
+          console.error("Thread has corrupted tool state:", error.message);
+          // Save user message and a fallback assistant response
+          await saveMessage(ctx, components.agent, {
+            threadId: args.threadId,
+            prompt: args.prompt,
+          });
+          // Don't throw - just log. User message is saved, AI won't respond for this corrupted thread
+          return;
+        }
+        throw error;
+      }
     } else {
+      // 💬 Fallback: just save message
       await saveMessage(ctx, components.agent, {
         threadId: args.threadId,
         prompt: args.prompt,
@@ -77,6 +87,9 @@ export const create = action({
   },
 });
 
+/* -------------------------------------------------
+   GET MANY MESSAGES
+------------------------------------------------- */
 export const getMany = query({
   args: {
     threadId: v.string(),
@@ -93,11 +106,9 @@ export const getMany = query({
       });
     }
 
-    const paginated = await supportAgent.listMessages(ctx, {
+    return await supportAgent.listMessages(ctx, {
       threadId: args.threadId,
       paginationOpts: args.paginationOpts,
     });
-
-    return paginated;
   },
 });
