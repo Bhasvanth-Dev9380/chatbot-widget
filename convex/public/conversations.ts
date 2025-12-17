@@ -114,7 +114,7 @@ export const create = mutation({
   args: {
     organizationId: v.string(),
     contactSessionId: v.id("contactSessions"),
-    chatbotId: v.optional(v.id("chatbots")),
+    chatbotId: v.optional(v.string()), // String chatbotId from embed snippet, NOT doc ID
   },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.contactSessionId);
@@ -142,22 +142,27 @@ export const create = mutation({
     let chatbot = null;
     let greetMessage = "Hello, how can I help you?";
 
-    // 1️⃣ Explicit chatbot
+    // 1️⃣ Explicit chatbotId (string) - look up by chatbotId field
     if (args.chatbotId) {
-      chatbot = await ctx.db.get(args.chatbotId);
+      chatbot = await ctx.db
+        .query("chatbots")
+        .withIndex("by_chatbot_id", (q) => q.eq("chatbotId", args.chatbotId))
+        .unique();
       if (chatbot && chatbot.organizationId === args.organizationId) {
         greetMessage = chatbot.greetMessage;
+      } else {
+        chatbot = null; // Reset if not found or wrong org
       }
     }
     // 2️⃣ Widget-selected chatbot
-    else if (widgetSettings?.selectedChatbotId) {
+    if (!chatbot && widgetSettings?.selectedChatbotId) {
       chatbot = await ctx.db.get(widgetSettings.selectedChatbotId);
       if (chatbot) {
         greetMessage = chatbot.greetMessage;
       }
     }
     // 3️⃣ Default chatbot
-    else {
+    if (!chatbot) {
       chatbot = await ctx.db
         .query("chatbots")
         .withIndex("by_organization_id", (q) =>

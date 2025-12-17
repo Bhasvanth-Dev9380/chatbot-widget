@@ -4,6 +4,10 @@ import { components, internal } from "../_generated/api";
 import { supportAgent } from "../system/ai/agents/supportAgent";
 import { paginationOptsValidator } from "convex/server";
 import { saveMessage } from "@convex-dev/agent";
+import { search } from "../system/ai/tools/search";
+import { resolveConversation } from "../system/ai/tools/resolveConversation";
+import { escalateConversation } from "../system/ai/tools/escalateConversation";
+import { createCustomAgentPrompt } from "../system/ai/constants";
 
 /* -------------------------------------------------
    CREATE MESSAGE (WIDGET → AGENT)
@@ -53,16 +57,56 @@ export const create = action({
       contactSessionId: args.contactSessionId,
     });
 
+    // Fetch chatbot settings or fallback to widget settings for custom prompt
+    let customPrompt: string | null = null;
+
+    if (conversation.chatbotId) {
+      const chatbot = await ctx.runQuery(internal.system.chatbots.getById, {
+        id: conversation.chatbotId,
+      });
+      customPrompt = chatbot?.customSystemPrompt ?? null;
+    } else {
+      // Fallback to widget settings for backward compatibility
+      const widgetSettings = await ctx.runQuery(
+        internal.system.widgetSettings.getByOrganizationId,
+        { organizationId: conversation.organizationId }
+      );
+      customPrompt = widgetSettings?.customSystemPrompt ?? null;
+    }
+
     const shouldTriggerAgent = conversation.status === "unresolved";
 
     if (shouldTriggerAgent) {
       try {
-        // 🤖 Let support agent handle it - tools defined on agent
-        await supportAgent.generateText(
-          ctx,
-          { threadId: args.threadId },
-          { prompt: args.prompt },
-        );
+        if (customPrompt) {
+          // Create a temporary agent with custom instructions merged with core template
+          const { Agent } = await import("@convex-dev/agent");
+          const { openai } = await import("@ai-sdk/openai");
+
+          const customAgent = new Agent(components.agent, {
+            name: "customSupportAgent",
+            languageModel: openai.chat('gpt-4o-mini'),
+            instructions: createCustomAgentPrompt(customPrompt),
+            tools: {
+              search,
+              resolveConversation,
+              escalateConversation,
+            }
+          });
+
+          await customAgent.generateText(
+            ctx,
+            { threadId: args.threadId },
+            { prompt: args.prompt }
+          );
+        } else {
+          // Use default agent
+          await supportAgent.generateText(
+            ctx,
+            { threadId: args.threadId },
+            { prompt: args.prompt }
+          );
+        }
       } catch (error: any) {
         // Handle corrupted thread state (tool_calls without responses)
         if (error?.message?.includes("tool_calls") || error?.message?.includes("tool_call_id")) {

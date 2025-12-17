@@ -1,8 +1,8 @@
 import { openai } from '@ai-sdk/openai';
-import { createTool, saveMessage } from "@convex-dev/agent";
+import { createTool } from "@convex-dev/agent";
 import { generateText } from "ai";
 import z from "zod";
-import { components, internal } from "../../../_generated/api";
+import { internal } from "../../../_generated/api";
 import rag from "../rag";
 import { SEARCH_INTERPRETER_PROMPT } from "../constants";
 
@@ -88,14 +88,8 @@ If the answer genuinely isn't in the search results, say: "I don't have info on 
       model: openai("gpt-4o-mini") as any,
     });
 
-    await saveMessage(ctx, components.agent, {
-      threadId: ctx.threadId,
-      message: {
-        role: "assistant",
-        content: response.text,
-      },
-    });
-
+    // DO NOT call saveMessage here - agent handles saving in v0.3.2
+    // Just return the result
     return response.text;
   },
 });

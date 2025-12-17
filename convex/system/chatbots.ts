@@ -1,5 +1,15 @@
 import { v } from "convex/values";
-import { internalQuery } from "../_generated/server";
+import { internalMutation, internalQuery } from "../_generated/server";
+
+// Generate a unique chatbot ID
+function generateChatbotId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 export const getByChatbotId = internalQuery({
   args: { chatbotId: v.string() },
@@ -25,5 +35,25 @@ export const getByOrganizationId = internalQuery({
       .query("chatbots")
       .withIndex("by_organization_id", (q) => q.eq("organizationId", args.organizationId))
       .collect();
+  },
+});
+
+// Migration: Add chatbotId to existing chatbots that don't have one
+export const migrateAddChatbotIds = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const chatbots = await ctx.db.query("chatbots").collect();
+    let updated = 0;
+    
+    for (const chatbot of chatbots) {
+      if (!chatbot.chatbotId) {
+        await ctx.db.patch(chatbot._id, {
+          chatbotId: generateChatbotId(),
+        });
+        updated++;
+      }
+    }
+    
+    return { total: chatbots.length, updated };
   },
 });
