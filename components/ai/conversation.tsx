@@ -32,7 +32,7 @@ export const AIConversationContent = ({
   className,
   ...props
 }: AIConversationContentProps) => (
-  <StickToBottom.Content className={cn("p-4", className)} {...props} />
+  <StickToBottom.Content className={cn("space-y-4 p-4", className)} {...props} />
 );
 
 export const AIConversationScrollButton = () => {

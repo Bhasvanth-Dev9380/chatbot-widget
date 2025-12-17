@@ -9,9 +9,9 @@ export type AIMessageProps = HTMLAttributes<HTMLDivElement> & {
 export const AIMessage = ({ className, from, ...props }: AIMessageProps) => (
   <div
     className={cn(
-      "group flex w-full items-end justify-end gap-2 py-2",
+      "group flex w-full items-end justify-end gap-2 py-1.5",
       from === "user" ? "is-user" : "is-assistant flex-row-reverse justify-end",
-      "[&>div]:max-w-[80%]",
+      "[&>div]:max-w-[85%]",
       className
     )}
     {...props}
@@ -28,14 +28,15 @@ export const AIMessageContent = ({
   <div
     className={cn(
       "break-words",
-      "flex flex-col gap-2 rounded-lg border border-border px-3 py-2 text-sm",
-      "bg-background text-foreground",
-      "group-[.is-user]:border-transparent group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground",
+      "flex flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+      "bg-muted text-foreground",
+      "group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground",
+      "shadow-sm",
       className
     )}
     {...props}
   >
-    <div className="is-user:dark">{children}</div>
+    <div className="whitespace-pre-wrap">{children}</div>
   </div>
 );
 

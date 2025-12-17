@@ -16,7 +16,7 @@ export const WidgetHeader = ({
   return (
     <header 
       className={cn(
-        "p-4 text-primary-foreground",
+        "p-4 text-primary-foreground shadow-sm",
         !customColor && "bg-primary",
         className,
       )}

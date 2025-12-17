@@ -63,6 +63,7 @@ export const WidgetChatScreen = () => {
   const previousMessageCountRef = useRef(0);
   const previousUserMessageCountRef = useRef(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const onBack = () => {
     setConversationId(null);
@@ -124,9 +125,22 @@ export const WidgetChatScreen = () => {
 
     form.reset();
     setPendingUserMessage(true);
+    
+    // Show typing indicator immediately when user sends message
+    setIsAITyping(true);
 
     // Scroll to bottom when message is sent
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 50);
+
+    // Set a timeout to hide typing if no response after 30s (failsafe)
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsAITyping(false);
+    }, 30000);
 
     await createMessage({
       threadId: conversation.threadId,
@@ -142,25 +156,15 @@ export const WidgetChatScreen = () => {
     const userMessages = uiMessages?.filter(m => m.role === "user") || [];
     const currentUserMessageCount = userMessages.length;
 
-    // When user's message appears, show typing indicator
-    if (pendingUserMessage && currentUserMessageCount > previousUserMessageCountRef.current) {
-      setPendingUserMessage(false);
-      setIsAITyping(true);
-    }
-
     // When AI responds, hide typing indicator
     if (currentMessageCount > previousMessageCountRef.current) {
       const lastMessage = uiMessages?.[uiMessages.length - 1];
       if (lastMessage?.role === "assistant") {
         setIsAITyping(false);
-      }
-    }
-
-    // Failsafe: If typing is showing but last message is assistant, hide it
-    if (isAITyping && currentMessageCount > 0) {
-      const lastMessage = uiMessages?.[uiMessages.length - 1];
-      if (lastMessage?.role === "assistant" && currentMessageCount === previousMessageCountRef.current) {
-        setIsAITyping(false);
+        setPendingUserMessage(false);
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
       }
     }
 
@@ -168,8 +172,21 @@ export const WidgetChatScreen = () => {
     previousUserMessageCountRef.current = currentUserMessageCount;
 
     // Scroll to bottom when new messages arrive
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.results, isAITyping, pendingUserMessage]);
+    if (currentMessageCount > 0) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+    }
+  }, [messages.results]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Convert messages to UI format
   const uiMessages = useMemo(() => {
@@ -268,34 +285,37 @@ export const WidgetChatScreen = () => {
         </AIConversationContent>
       </AIConversation>
 
-      {uiMessages.length === 1 && (
-        <AISuggestions className="flex w-full flex-col items-end p-2">
-          {suggestions.map((suggestion) => {
-            if (!suggestion) {
-              return null;
-            }
+      {uiMessages.length === 1 && suggestions.length > 0 && (
+        <div className="border-t bg-muted/30 px-4 py-3">
+          <p className="mb-2 text-xs font-medium text-muted-foreground">Suggested questions</p>
+          <AISuggestions className="flex w-full flex-wrap items-start gap-2">
+            {suggestions.map((suggestion) => {
+              if (!suggestion) {
+                return null;
+              }
 
-            return (
-              <AISuggestion
-                key={suggestion}
-                onClick={() => {
-                  form.setValue("message", suggestion, {
-                    shouldValidate: true,
-                    shouldDirty: true,
-                    shouldTouch: true,
-                  });
-                  form.handleSubmit(onSubmit)();
-                }}
-                suggestion={suggestion}
-              />
-            );
-          })}
-        </AISuggestions>
+              return (
+                <AISuggestion
+                  key={suggestion}
+                  onClick={() => {
+                    form.setValue("message", suggestion, {
+                      shouldValidate: true,
+                      shouldDirty: true,
+                      shouldTouch: true,
+                    });
+                    form.handleSubmit(onSubmit)();
+                  }}
+                  suggestion={suggestion}
+                />
+              );
+            })}
+          </AISuggestions>
+        </div>
       )}
 
       <Form {...form}>
         <AIInput
-          className="rounded-none border-x-0 border-b-0"
+          className="rounded-none border-x-0 border-b-0 shadow-none"
           onSubmit={form.handleSubmit(onSubmit)}
         >
           <FormField
@@ -325,8 +345,8 @@ export const WidgetChatScreen = () => {
           <AIInputToolbar>
             <AIInputTools />
             <AIInputSubmit
-              disabled={conversation?.status === "resolved" || !form.formState.isValid}
-              status="ready"
+              disabled={conversation?.status === "resolved" || !form.formState.isValid || isAITyping}
+              status={isAITyping ? "submitted" : "ready"}
               type="submit"
             />
           </AIInputToolbar>
