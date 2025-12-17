@@ -2,6 +2,16 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "../_generated/server";
 import { paginationOptsValidator } from "convex/server";
 
+// Generate a unique chatbot ID (similar to Convex IDs but for string field)
+function generateChatbotId(): string {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < 32; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
 /* -------------------------------------------------
    CREATE
 ------------------------------------------------- */
@@ -36,8 +46,9 @@ export const create = mutation({
     }
 
     const now = Date.now();
+    const chatbotId = generateChatbotId();
 
-    const chatbotId = await ctx.db.insert("chatbots", {
+    const docId = await ctx.db.insert("chatbots", {
       organizationId: args.organizationId,
       name: args.name,
       description: args.description,
@@ -46,11 +57,12 @@ export const create = mutation({
       defaultSuggestions: args.defaultSuggestions,
       isActive: true,
       isDefault: args.isDefault ?? false,
+      chatbotId, // Set the string chatbotId for embed snippets
       createdAt: now,
       updatedAt: now,
     });
 
-    return chatbotId;
+    return docId;
   },
 });
 
