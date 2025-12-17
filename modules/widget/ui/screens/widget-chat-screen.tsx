@@ -124,7 +124,6 @@ export const WidgetChatScreen = () => {
 
     form.reset();
     setPendingUserMessage(true);
-    setIsAITyping(true); // Show typing immediately
 
     // Scroll to bottom when message is sent
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -143,10 +142,10 @@ export const WidgetChatScreen = () => {
     const userMessages = uiMessages?.filter(m => m.role === "user") || [];
     const currentUserMessageCount = userMessages.length;
 
-    // When user's message appears in the list, we're still waiting for AI
+    // When user's message appears, show typing indicator
     if (pendingUserMessage && currentUserMessageCount > previousUserMessageCountRef.current) {
       setPendingUserMessage(false);
-      // Keep isAITyping true - waiting for assistant response
+      setIsAITyping(true);
     }
 
     // When AI responds, hide typing indicator
@@ -220,7 +219,11 @@ export const WidgetChatScreen = () => {
 
           {uiMessages.map((message) => {
             const isUser = message.role === "user";
-            const hasContent = message.text && message.text.trim().length > 0;
+            // Use message.content for text (v0.3.2 format)
+            const content = typeof message.content === 'string' 
+              ? message.content 
+              : (message.text || "");
+            const hasContent = content && content.trim().length > 0;
 
             // Skip empty assistant messages
             if (!isUser && !hasContent) {
@@ -230,11 +233,11 @@ export const WidgetChatScreen = () => {
             return (
               <AIMessage
                 from={isUser ? "user" : "assistant"}
-                key={message.key}
+                key={message.id || message.key}
               >
                 <AIMessageContent>
                   <AIResponse>
-                    {message.text || ""}
+                    {content}
                   </AIResponse>
                 </AIMessageContent>
 
