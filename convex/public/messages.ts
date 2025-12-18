@@ -19,54 +19,44 @@ export const create = action({
     contactSessionId: v.id("contactSessions"),
   },
   handler: async (ctx, args) => {
-    // ✅ Validate contact session
+    // 🔒 Validate session
     const contactSession = await ctx.runQuery(
       internal.system.contactSessions.getOne,
-      { contactSessionId: args.contactSessionId },
+      { contactSessionId: args.contactSessionId }
     );
 
     if (!contactSession || contactSession.expiresAt < Date.now()) {
-      throw new ConvexError({
-        code: "UNAUTHORIZED",
-        message: "Invalid session",
-      });
+      throw new ConvexError("Invalid session");
     }
 
-    // ✅ Fetch conversation by thread
     const conversation = await ctx.runQuery(
       internal.system.conversations.getByThreadId,
-      { threadId: args.threadId },
+      { threadId: args.threadId }
     );
 
     if (!conversation) {
-      throw new ConvexError({
-        code: "NOT_FOUND",
-        message: "Conversation not found",
-      });
+      throw new ConvexError("Conversation not found");
     }
 
     if (conversation.status === "resolved") {
-      throw new ConvexError({
-        code: "BAD_REQUEST",
-        message: "Conversation resolved",
-      });
+      throw new ConvexError("Conversation resolved");
     }
 
-    // 🔄 Refresh session (reference behavior)
+    // 🔄 Refresh session
     await ctx.runMutation(internal.system.contactSessions.refresh, {
       contactSessionId: args.contactSessionId,
     });
 
-    // Fetch chatbot settings or fallback to widget settings for custom prompt
+    // 🧠 Resolve custom prompt
     let customPrompt: string | null = null;
 
     if (conversation.chatbotId) {
-      const chatbot = await ctx.runQuery(internal.system.chatbots.getById, {
-        id: conversation.chatbotId,
-      });
+      const chatbot = await ctx.runQuery(
+        internal.system.chatbots.getById,
+        { id: conversation.chatbotId }
+      );
       customPrompt = chatbot?.customSystemPrompt ?? null;
     } else {
-      // Fallback to widget settings for backward compatibility
       const widgetSettings = await ctx.runQuery(
         internal.system.widgetSettings.getByOrganizationId,
         { organizationId: conversation.organizationId }
@@ -74,59 +64,96 @@ export const create = action({
       customPrompt = widgetSettings?.customSystemPrompt ?? null;
     }
 
-    const shouldTriggerAgent = conversation.status === "unresolved";
+    try {
+      console.log("🚀 Starting agent generateText for threadId:", args.threadId);
+      console.log("📝 User prompt:", args.prompt);
 
-    if (shouldTriggerAgent) {
-      try {
-        if (customPrompt) {
-          // Create a temporary agent with custom instructions merged with core template
-          const { Agent } = await import("@convex-dev/agent");
-          const { openai } = await import("@ai-sdk/openai");
+      if (customPrompt) {
+        const { Agent } = await import("@convex-dev/agent");
+        const { openai } = await import("@ai-sdk/openai");
 
-          const customAgent = new Agent(components.agent, {
-            name: "customSupportAgent",
-            languageModel: openai.chat('gpt-4o-mini'),
-            instructions: createCustomAgentPrompt(customPrompt),
-            tools: {
-              search,
-              resolveConversation,
-              escalateConversation,
-            }
-          });
+        const agent = new Agent(components.agent, {
+          name: "customSupportAgent",
+          languageModel: openai.chat("gpt-4o-mini"),
+          instructions: createCustomAgentPrompt(customPrompt),
+          tools: {
+            search,
+            resolveConversation,
+            escalateConversation,
+          },
+        });
 
-          await customAgent.generateText(
-            ctx,
-            { threadId: args.threadId },
-            { prompt: args.prompt }
-          );
-        } else {
-          // Use default agent
-          await supportAgent.generateText(
-            ctx,
-            { threadId: args.threadId },
-            { prompt: args.prompt }
-          );
+        console.log("🤖 Using custom agent");
+        const result = await agent.generateText(
+          ctx,
+          { threadId: args.threadId },
+          { prompt: args.prompt }
+        );
+        console.log("✅ Custom agent completed. Result:", JSON.stringify(result, null, 2));
+      } else {
+        console.log("🤖 Using support agent");
+        const result = await supportAgent.generateText(
+          ctx,
+          { threadId: args.threadId },
+          { prompt: args.prompt }
+        );
+        console.log("✅ Support agent completed. Result:", JSON.stringify(result, null, 2));
+
+        // Check if agent ended with tool calls instead of text
+        const lastStep = result.steps[result.steps.length - 1];
+        if (lastStep.finishReason === "tool-calls") {
+          console.warn("⚠️ Agent stopped at tool-calls without generating text response!");
+
+          // Extract tool result to send as the response
+          const toolResult = lastStep.content.find((c: any) => c.type === "tool-result") as any;
+          if (toolResult && toolResult.output) {
+            console.log("💡 Saving tool result as assistant message:", toolResult.output);
+            await saveMessage(ctx, components.agent, {
+              threadId: args.threadId,
+              message: {
+                role: "assistant",
+                content: String(toolResult.output),
+              },
+            });
+          } else {
+            console.error("❌ No tool result found to save");
+          }
         }
-      } catch (error: any) {
-        // Handle corrupted thread state (tool_calls without responses)
-        if (error?.message?.includes("tool_calls") || error?.message?.includes("tool_call_id")) {
-          console.error("Thread has corrupted tool state:", error.message);
-          // Save user message and a fallback assistant response
-          await saveMessage(ctx, components.agent, {
-            threadId: args.threadId,
-            prompt: args.prompt,
-          });
-          // Don't throw - just log. User message is saved, AI won't respond for this corrupted thread
-          return;
-        }
-        throw error;
       }
-    } else {
-      // 💬 Fallback: just save message
+
+      // Check what messages were actually saved
+      const messagesAfter = await supportAgent.listMessages(ctx, {
+        threadId: args.threadId,
+        paginationOpts: { numItems: 5, cursor: null },
+      });
+      console.log("📨 Latest messages after agent run:");
+      messagesAfter.page.slice(0, 3).forEach((msg: any, idx: number) => {
+        console.log(`  [${idx}] Role: ${msg.role}, Content:`, msg.content);
+      });
+    } catch (error: any) {
+      // 🚨 HARD TOOL CORRUPTION HANDLING (FINAL FIX)
+      console.error("Agent failure:", error?.message);
+
+      // Save user message so chat history stays correct
       await saveMessage(ctx, components.agent, {
         threadId: args.threadId,
-        prompt: args.prompt,
+        message: {
+          role: "user",
+          content: args.prompt,
+        },
       });
+
+      // Save fallback assistant response (CRITICAL)
+      await saveMessage(ctx, components.agent, {
+        threadId: args.threadId,
+        message: {
+          role: "assistant",
+          content:
+            "Sorry — something went wrong on my side. Please try again.",
+        },
+      });
+
+      return;
     }
   },
 });
@@ -141,13 +168,10 @@ export const getMany = query({
     contactSessionId: v.id("contactSessions"),
   },
   handler: async (ctx, args) => {
-    const contactSession = await ctx.db.get(args.contactSessionId);
+    const session = await ctx.db.get(args.contactSessionId);
 
-    if (!contactSession || contactSession.expiresAt < Date.now()) {
-      throw new ConvexError({
-        code: "UNAUTHORIZED",
-        message: "Invalid or expired session",
-      });
+    if (!session || session.expiresAt < Date.now()) {
+      throw new ConvexError("Invalid session");
     }
 
     return await supportAgent.listMessages(ctx, {

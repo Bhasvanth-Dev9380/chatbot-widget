@@ -4,10 +4,16 @@ import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, MenuIcon } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { conversationIdAtom, organizationIdAtom, contactSessionIdAtomFamily, screenAtom, widgetSettingsAtom } from "../../atoms/widget-atoms";
+import {
+  conversationIdAtom,
+  organizationIdAtom,
+  contactSessionIdAtomFamily,
+  screenAtom,
+  widgetSettingsAtom,
+} from "../../atoms/widget-atoms";
 import { api } from "../../../../convex/_generated/api";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
 import {
   AIConversation,
@@ -15,7 +21,6 @@ import {
 } from "@/components/ai/conversation";
 import { useAction, useQuery } from "convex/react";
 import { Form, FormField } from "@/components/ui/form";
-
 import {
   AIInput,
   AIInputSubmit,
@@ -23,25 +28,30 @@ import {
   AIInputToolbar,
   AIInputTools,
 } from "@/components/ai/input";
-
-import {
-  AIMessage,
-  AIMessageContent,
-} from "@/components/ai/message";
+import { AIMessage, AIMessageContent } from "@/components/ai/message";
 import { AIResponse } from "@/components/ai/response";
 import { AISuggestions, AISuggestion } from "@/components/ai/suggestion";
 
 import { useForm } from "react-hook-form";
 import { toUIMessages, useThreadMessages } from "@convex-dev/agent/react";
-
-import { useInfiniteScroll } from "../../hooks/use-infinite-scroll";
 import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
+import { useInfiniteScroll } from "../../hooks/use-infinite-scroll";
 import { DicebearAvatar } from "@/components/dicebear-avatar";
-import { useMemo, useState, useEffect, useRef } from "react";
 import { TypingIndicator } from "@/components/ai/typing-indicator";
 
-const formSchema = z.object({
-  message: z.string().min(1, "Message is required"),
+import { useEffect, useMemo, useRef, useState } from "react";
+
+// Optimistic message with client-side ID
+type OptimisticMessage = {
+  id: string;
+  content: string;
+};
+
+// Typing states
+type TypingState = "idle" | "waiting_for_assistant";
+
+const schema = z.object({
+  message: z.string().min(1, "Please enter a message"),
 });
 
 export const WidgetChatScreen = () => {
@@ -49,7 +59,7 @@ export const WidgetChatScreen = () => {
   const setConversationId = useSetAtom(conversationIdAtom);
 
   const widgetSettings = useAtomValue(widgetSettingsAtom);
-  const assistantLogoUrl = widgetSettings?.appearance?.logo?.url ?? undefined;
+  const assistantLogoUrl = widgetSettings?.appearance?.logo?.url;
 
   const conversationId = useAtomValue(conversationIdAtom);
   const organizationId = useAtomValue(organizationIdAtom);
@@ -57,165 +67,134 @@ export const WidgetChatScreen = () => {
     contactSessionIdAtomFamily(organizationId || "")
   );
 
-  // Typing indicator state
-  const [isAITyping, setIsAITyping] = useState(false);
-  const [pendingUserMessage, setPendingUserMessage] = useState(false);
-  const previousMessageCountRef = useRef(0);
-  const previousUserMessageCountRef = useRef(0);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [optimisticMessage, setOptimisticMessage] = useState<OptimisticMessage | null>(null);
+  const [typingState, setTypingState] = useState<TypingState>("idle");
+  const lastAssistantMessageIdRef = useRef<string | null>(null);
 
-  const onBack = () => {
-    setConversationId(null);
-    setScreen("selection");
-  };
-
-  const suggestions = useMemo(() => {
-    if (!widgetSettings) {
-      return [];
-    }
-
-    return Object.keys(widgetSettings.defaultSuggestions).map((key) => {
-      return widgetSettings.defaultSuggestions[
-        key as keyof typeof widgetSettings.defaultSuggestions
-      ];
-    });
-  }, [widgetSettings]);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const conversation = useQuery(
     api.public.conversations.getOne,
     conversationId && contactSessionId
-      ? {
-          conversationId,
-          contactSessionId,
-        }
+      ? { conversationId, contactSessionId }
       : "skip"
   );
 
   const messages = useThreadMessages(
     api.public.messages.getMany,
     conversation?.threadId && contactSessionId
-      ? {
-          threadId: conversation.threadId,
-          contactSessionId,
-        }
+      ? { threadId: conversation.threadId, contactSessionId }
       : "skip",
-    { initialNumItems: 10 },
+    { initialNumItems: 10 }
   );
 
-  const { topElementRef, handleLoadMore, canLoadMore, isLoadingMore } = useInfiniteScroll({
-    status: messages.status,
-    loadMore: messages.loadMore,
-    loadSize: 10
-  });
-
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      message: "",
-    },
-  });
+  const { topElementRef, handleLoadMore, canLoadMore, isLoadingMore } =
+    useInfiniteScroll({
+      status: messages.status,
+      loadMore: messages.loadMore,
+      loadSize: 10,
+    });
 
   const createMessage = useAction(api.public.messages.create);
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    if (!conversation || !contactSessionId) {
-      return;
-    }
+  const form = useForm<z.infer<typeof schema>>({
+    resolver: zodResolver(schema),
+    defaultValues: { message: "" },
+  });
 
-    form.reset();
-    setPendingUserMessage(true);
-    
-    // Show typing indicator immediately when user sends message
-    setIsAITyping(true);
-
-    // Scroll to bottom when message is sent
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 50);
-
-    // Set a timeout to hide typing if no response after 30s (failsafe)
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current);
-    }
-    typingTimeoutRef.current = setTimeout(() => {
-      setIsAITyping(false);
-    }, 30000);
-
-    await createMessage({
-      threadId: conversation.threadId,
-      prompt: values.message,
-      contactSessionId,
+  const uiMessages = useMemo(() => {
+    return toUIMessages(messages.results ?? []).filter((m) => {
+      const text = typeof m === "string" ? m : (m.text ?? "");
+      return text.trim().length > 0;
     });
+  }, [messages.results]);
+
+  // 🔒 DETERMINISTIC TYPING LIFECYCLE STATE MACHINE
+  useEffect(() => {
+    if (!uiMessages.length) return;
+
+    const last = uiMessages[uiMessages.length - 1];
+    const lastText = typeof last === "string" ? last : (last.text ?? "");
+
+    // Remove optimistic message when server confirms user message
+    if (
+      optimisticMessage &&
+      typeof last !== "string" &&
+      last.role === "user" &&
+      lastText.trim() === optimisticMessage.content.trim()
+    ) {
+      setOptimisticMessage(null);
+    }
+
+    // Stop typing ONLY when assistant responds with actual content
+    if (typeof last !== "string" && last.role === "assistant" && lastText.trim().length > 0) {
+      const lastId = (last.id || last.key) ?? "";
+
+      // Only transition if this is a NEW assistant message
+      if (lastId !== lastAssistantMessageIdRef.current) {
+        lastAssistantMessageIdRef.current = lastId;
+        setTypingState("idle");
+        setOptimisticMessage(null);
+
+        // Re-focus input after assistant response
+        setTimeout(() => textareaRef.current?.focus(), 100);
+      }
+    }
+  }, [uiMessages, optimisticMessage]);
+
+  const onSubmit = async ({ message }: z.infer<typeof schema>) => {
+    if (!conversation || !contactSessionId || typingState !== "idle") return;
+
+    // Generate client-side ID for optimistic message
+    const optimisticId = crypto.randomUUID();
+
+    // Set optimistic message and start typing
+    setOptimisticMessage({ id: optimisticId, content: message });
+    setTypingState("waiting_for_assistant");
+    form.reset();
+
+    try {
+      await createMessage({
+        threadId: conversation.threadId,
+        prompt: message,
+        contactSessionId,
+      });
+    } catch (error) {
+      // Fail-safe: reset state on error
+      console.error("Message creation failed:", error);
+      setTypingState("idle");
+      setOptimisticMessage(null);
+    }
   };
 
-  // Handle typing animation flow
-  useEffect(() => {
-    const uiMessages = toUIMessages(messages.results ?? []);
-    const currentMessageCount = uiMessages?.length || 0;
-    const userMessages = uiMessages?.filter(m => m.role === "user") || [];
-    const currentUserMessageCount = userMessages.length;
-
-    // When AI responds, hide typing indicator
-    if (currentMessageCount > previousMessageCountRef.current) {
-      const lastMessage = uiMessages?.[uiMessages.length - 1];
-      if (lastMessage?.role === "assistant") {
-        setIsAITyping(false);
-        setPendingUserMessage(false);
-        if (typingTimeoutRef.current) {
-          clearTimeout(typingTimeoutRef.current);
-        }
-      }
-    }
-
-    previousMessageCountRef.current = currentMessageCount;
-    previousUserMessageCountRef.current = currentUserMessageCount;
-
-    // Scroll to bottom when new messages arrive
-    if (currentMessageCount > 0) {
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, 100);
-    }
-  }, [messages.results]);
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Convert messages to UI format
-  const uiMessages = useMemo(() => {
-    return toUIMessages(messages.results ?? []);
-  }, [messages.results]);
+  const suggestions = useMemo(() => {
+    if (!widgetSettings) return [];
+    return Object.values(widgetSettings.defaultSuggestions).filter(Boolean);
+  }, [widgetSettings]);
 
   return (
     <>
-      <WidgetHeader className="flex flex-col items-start gap-y-1">
+      <WidgetHeader>
         <div className="flex w-full items-center justify-between">
-          <div className="flex items-center gap-x-2">
+          <div className="flex items-center gap-2">
             <Button
               size="icon"
               variant="transparent"
-              onClick={onBack}
+              onClick={() => {
+                setConversationId(null);
+                setScreen("selection");
+              }}
             >
               <ArrowLeft />
             </Button>
             <DicebearAvatar
-              imageUrl={assistantLogoUrl}
+              imageUrl={assistantLogoUrl ?? undefined}
               seed={widgetSettings?.chatbotName || "assistant"}
               size={32}
             />
-            <p>{widgetSettings?.chatbotName || "Support Assistant"}</p>
+            <span>{widgetSettings?.chatbotName || "Assistant"}</span>
           </div>
-          <Button
-            size="icon"
-            variant="transparent"
-          >
+          <Button size="icon" variant="transparent">
             <MenuIcon />
           </Button>
         </div>
@@ -225,42 +204,41 @@ export const WidgetChatScreen = () => {
           </div>
         )}
       </WidgetHeader>
+
       <AIConversation>
         <AIConversationContent>
           <InfiniteScrollTrigger
+            ref={topElementRef}
             canLoadMore={canLoadMore}
             isLoadingMore={isLoadingMore}
             onLoadMore={handleLoadMore}
-            ref={topElementRef}
           />
 
-          {uiMessages.map((message) => {
-            const isUser = message.role === "user";
-            // Use message.content for text (v0.3.2 format)
-            const content = typeof message.content === 'string' 
-              ? message.content 
-              : (message.text || "");
-            const hasContent = content && content.trim().length > 0;
+          {uiMessages.map((m) => {
+            if (typeof m === "string") return null;
 
-            // Skip empty assistant messages
-            if (!isUser && !hasContent) {
+            const text = m.text ?? "";
+
+            // Hide server user message if optimistic is showing
+            if (
+              optimisticMessage &&
+              m.role === "user" &&
+              text.trim() === optimisticMessage.content.trim()
+            ) {
               return null;
             }
 
             return (
               <AIMessage
-                from={isUser ? "user" : "assistant"}
-                key={message.id || message.key}
+                key={(m.id || m.key) ?? crypto.randomUUID()}
+                from={m.role === "user" ? "user" : "assistant"}
               >
                 <AIMessageContent>
-                  <AIResponse>
-                    {content}
-                  </AIResponse>
+                  <AIResponse>{text}</AIResponse>
                 </AIMessageContent>
-
-                {!isUser && (
+                {m.role === "assistant" && (
                   <DicebearAvatar
-                    imageUrl={assistantLogoUrl}
+                    imageUrl={assistantLogoUrl ?? undefined}
                     seed={widgetSettings?.chatbotName || "assistant"}
                     size={32}
                   />
@@ -269,86 +247,79 @@ export const WidgetChatScreen = () => {
             );
           })}
 
-          {isAITyping && (
+          {optimisticMessage && (
+            <AIMessage key={optimisticMessage.id} from="user">
+              <AIMessageContent>
+                <AIResponse>{optimisticMessage.content}</AIResponse>
+              </AIMessageContent>
+            </AIMessage>
+          )}
+
+          {typingState === "waiting_for_assistant" && (
             <AIMessage from="assistant">
               <AIMessageContent>
                 <TypingIndicator />
               </AIMessageContent>
               <DicebearAvatar
-                imageUrl={assistantLogoUrl}
+                imageUrl={assistantLogoUrl ?? undefined}
                 seed={widgetSettings?.chatbotName || "assistant"}
                 size={32}
               />
             </AIMessage>
           )}
-          <div ref={messagesEndRef} />
         </AIConversationContent>
       </AIConversation>
 
       {uiMessages.length === 1 && suggestions.length > 0 && (
-        <div className="border-t bg-muted/30 px-4 py-3">
-          <p className="mb-2 text-xs font-medium text-muted-foreground">Suggested questions</p>
-          <AISuggestions className="flex w-full flex-wrap items-start gap-2">
-            {suggestions.map((suggestion) => {
-              if (!suggestion) {
-                return null;
-              }
-
-              return (
-                <AISuggestion
-                  key={suggestion}
-                  onClick={() => {
-                    form.setValue("message", suggestion, {
-                      shouldValidate: true,
-                      shouldDirty: true,
-                      shouldTouch: true,
-                    });
-                    form.handleSubmit(onSubmit)();
-                  }}
-                  suggestion={suggestion}
-                />
-              );
-            })}
+        <div className="border-t px-4 py-3">
+          <AISuggestions className="flex flex-wrap gap-2">
+            {suggestions.map((s) => (
+              <AISuggestion
+                key={s}
+                suggestion={s}
+                onClick={() => {
+                  form.setValue("message", s);
+                  form.handleSubmit(onSubmit)();
+                }}
+              />
+            ))}
           </AISuggestions>
         </div>
       )}
 
       <Form {...form}>
-        <AIInput
-          className="rounded-none border-x-0 border-b-0 shadow-none"
-          onSubmit={form.handleSubmit(onSubmit)}
-        >
+        <AIInput onSubmit={form.handleSubmit(onSubmit)}>
           <FormField
             control={form.control}
-            disabled={conversation?.status === "resolved"}
             name="message"
             render={({ field }) => (
               <AIInputTextarea
-                disabled={conversation?.status === "resolved"}
+                aria-label="Message input"
+                disabled={typingState !== "idle"}
+                placeholder={
+                  typingState === "waiting_for_assistant"
+                    ? "AI is typing…"
+                    : "Type a message…"
+                }
+                value={field.value}
                 onChange={field.onChange}
+                onBlur={field.onBlur}
+                ref={(el) => {
+                  field.ref(el);
+                  textareaRef.current = el;
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
+                  if (e.key === "Enter" && !e.shiftKey && typingState === "idle") {
                     e.preventDefault();
                     form.handleSubmit(onSubmit)();
                   }
                 }}
-                placeholder={
-                  conversation?.status === "resolved"
-                    ? "This conversation has been resolved."
-                    : "Type your message..."
-                }
-                value={field.value}
               />
             )}
           />
-
           <AIInputToolbar>
             <AIInputTools />
-            <AIInputSubmit
-              disabled={conversation?.status === "resolved" || !form.formState.isValid || isAITyping}
-              status={isAITyping ? "submitted" : "ready"}
-              type="submit"
-            />
+            <AIInputSubmit disabled={typingState !== "idle"} />
           </AIInputToolbar>
         </AIInput>
       </Form>
