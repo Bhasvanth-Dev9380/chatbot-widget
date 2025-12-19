@@ -301,3 +301,201 @@ export const debugGetByKnowledgeBaseId = query({
       .collect();
   },
 });
+
+/* -------------------------------------------------
+   GENERATE UPLOAD URL FOR LOGO
+------------------------------------------------- */
+export const generateLogoUploadUrl = mutation(async (ctx) => {
+  return await ctx.storage.generateUploadUrl();
+});
+
+/* -------------------------------------------------
+   UPLOAD LOGO
+------------------------------------------------- */
+export const uploadLogo = mutation({
+  args: {
+    chatbotId: v.id("chatbots"),
+    organizationId: v.string(),
+    storageId: v.id("_storage"),
+    fileName: v.string(),
+    mimeType: v.string(),
+    size: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const chatbot = await ctx.db.get(args.chatbotId);
+
+    if (!chatbot) {
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "Chatbot not found",
+      });
+    }
+
+    if (chatbot.organizationId !== args.organizationId) {
+      throw new ConvexError({
+        code: "UNAUTHORIZED",
+        message: "Invalid Organization ID",
+      });
+    }
+
+    // Delete old logo storage if exists
+    if (chatbot.appearance?.logo?.type === "upload" && chatbot.appearance?.logo?.storageId) {
+      try {
+        await ctx.storage.delete(chatbot.appearance.logo.storageId);
+      } catch (error) {
+        console.error("Failed to delete old logo:", error);
+      }
+    }
+
+    const existingAppearance = chatbot.appearance || {};
+
+    await ctx.db.patch(args.chatbotId, {
+      appearance: {
+        ...existingAppearance,
+        logo: {
+          type: "upload",
+          storageId: args.storageId,
+          fileName: args.fileName,
+          mimeType: args.mimeType,
+          size: args.size,
+          updatedAt: Date.now(),
+        },
+      },
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/* -------------------------------------------------
+   SET LOGO URL
+------------------------------------------------- */
+export const setLogoUrl = mutation({
+  args: {
+    chatbotId: v.id("chatbots"),
+    organizationId: v.string(),
+    externalUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const chatbot = await ctx.db.get(args.chatbotId);
+
+    if (!chatbot) {
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "Chatbot not found",
+      });
+    }
+
+    if (chatbot.organizationId !== args.organizationId) {
+      throw new ConvexError({
+        code: "UNAUTHORIZED",
+        message: "Invalid Organization ID",
+      });
+    }
+
+    // Delete old logo storage if exists
+    if (chatbot.appearance?.logo?.type === "upload" && chatbot.appearance?.logo?.storageId) {
+      try {
+        await ctx.storage.delete(chatbot.appearance.logo.storageId);
+      } catch (error) {
+        console.error("Failed to delete old logo:", error);
+      }
+    }
+
+    const existingAppearance = chatbot.appearance || {};
+
+    await ctx.db.patch(args.chatbotId, {
+      appearance: {
+        ...existingAppearance,
+        logo: {
+          type: "url",
+          externalUrl: args.externalUrl,
+          updatedAt: Date.now(),
+        },
+      },
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/* -------------------------------------------------
+   RESET LOGO TO DEFAULT
+------------------------------------------------- */
+export const resetLogo = mutation({
+  args: {
+    chatbotId: v.id("chatbots"),
+    organizationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const chatbot = await ctx.db.get(args.chatbotId);
+
+    if (!chatbot) {
+      throw new ConvexError({
+        code: "NOT_FOUND",
+        message: "Chatbot not found",
+      });
+    }
+
+    if (chatbot.organizationId !== args.organizationId) {
+      throw new ConvexError({
+        code: "UNAUTHORIZED",
+        message: "Invalid Organization ID",
+      });
+    }
+
+    // Delete old logo storage if exists
+    if (chatbot.appearance?.logo?.type === "upload" && chatbot.appearance?.logo?.storageId) {
+      try {
+        await ctx.storage.delete(chatbot.appearance.logo.storageId);
+      } catch (error) {
+        console.error("Failed to delete old logo:", error);
+      }
+    }
+
+    const existingAppearance = chatbot.appearance || {};
+
+    await ctx.db.patch(args.chatbotId, {
+      appearance: {
+        ...existingAppearance,
+        logo: {
+          type: "default",
+          updatedAt: Date.now(),
+        },
+      },
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
+/* -------------------------------------------------
+   GET LOGO URL
+------------------------------------------------- */
+export const getLogoUrl = query({
+  args: {
+    chatbotId: v.id("chatbots"),
+  },
+  handler: async (ctx, args) => {
+    const chatbot = await ctx.db.get(args.chatbotId);
+
+    if (!chatbot || !chatbot.appearance?.logo) {
+      return null;
+    }
+
+    const logo = chatbot.appearance.logo;
+
+    if (logo.type === "url" && logo.externalUrl) {
+      return logo.externalUrl;
+    }
+
+    if (logo.type === "upload" && logo.storageId) {
+      return await ctx.storage.getUrl(logo.storageId);
+    }
+
+    return null;
+  },
+});
