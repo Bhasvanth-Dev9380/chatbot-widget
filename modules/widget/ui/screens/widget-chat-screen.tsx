@@ -143,15 +143,28 @@ export const WidgetChatScreen = () => {
   }, [uiMessages, optimisticMessage]);
 
   const onSubmit = async ({ message }: z.infer<typeof schema>) => {
-    if (!conversation || !contactSessionId || typingState !== "idle") return;
+    if (
+  !conversation ||
+  !contactSessionId ||
+  typingState !== "idle" ||
+  conversation.status === "resolved"
+) return;
+
+    const isEscalated = conversation.status === "escalated";
+
 
     // Generate client-side ID for optimistic message
     const optimisticId = crypto.randomUUID();
 
     // Set optimistic message and start typing
     setOptimisticMessage({ id: optimisticId, content: message });
-    setTypingState("waiting_for_assistant");
-    form.reset();
+
+if (!isEscalated) {
+  setTypingState("waiting_for_assistant");
+}
+
+form.reset();
+
 
     try {
       await createMessage({
@@ -295,12 +308,19 @@ export const WidgetChatScreen = () => {
             render={({ field }) => (
               <AIInputTextarea
                 aria-label="Message input"
-                disabled={typingState !== "idle"}
+                disabled={
+  typingState !== "idle" ||
+  conversation?.status === "resolved"
+}
+
                 placeholder={
-                  typingState === "waiting_for_assistant"
-                    ? "AI is typing…"
-                    : "Type a message…"
-                }
+  conversation?.status === "resolved"
+    ? "This conversation is closed"
+    : typingState === "waiting_for_assistant"
+    ? "AI is typing…"
+    : "Type a message…"
+}
+
                 value={field.value}
                 onChange={field.onChange}
                 onBlur={field.onBlur}

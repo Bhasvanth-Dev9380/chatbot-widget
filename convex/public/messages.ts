@@ -38,9 +38,22 @@ export const create = action({
       throw new ConvexError("Conversation not found");
     }
 
-    if (conversation.status === "resolved") {
-      throw new ConvexError("Conversation resolved");
-    }
+    if (conversation.status !== "unresolved") {
+  // Save user message but DO NOT run the agent
+  await saveMessage(ctx, components.agent, {
+    threadId: args.threadId,
+    message: {
+      role: "user",
+      content: args.prompt,
+    },
+  });
+
+  // Stop here. No agent, no tools, no fallback AI.
+  return;
+}
+
+
+    
 
     // 🔄 Refresh session
     await ctx.runMutation(internal.system.contactSessions.refresh, {
