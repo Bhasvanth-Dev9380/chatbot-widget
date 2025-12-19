@@ -539,7 +539,19 @@ function formatFileSize(bytes: number): string {
 function deduplicateFiles(files: PublicFile[]): PublicFile[] {
   const map = new Map<string, PublicFile>();
   for (const f of files) {
-    if (!map.has(f.name)) map.set(f.name, f);
+    const existing = map.get(f.name);
+    if (!existing) {
+      map.set(f.name, f);
+    } else {
+      // Prioritize "ready" > "error" > "processing" status
+      const statusPriority = { ready: 3, error: 2, processing: 1 };
+      const existingPriority = statusPriority[existing.status] || 0;
+      const currentPriority = statusPriority[f.status] || 0;
+
+      if (currentPriority > existingPriority) {
+        map.set(f.name, f);
+      }
+    }
   }
   return [...map.values()];
 }
