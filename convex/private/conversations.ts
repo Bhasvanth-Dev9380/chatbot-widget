@@ -2,10 +2,7 @@ import { mutation, query, action } from "../_generated/server";
 import { ConvexError, v } from "convex/values";
 import { supportAgent } from "../system/ai/agents/supportAgent";
 import { MessageDoc } from "@convex-dev/agent";
-import {
-  paginationOptsValidator,
-  PaginationResult,
-} from "convex/server";
+import { paginationOptsValidator, PaginationResult } from "convex/server";
 import { Doc } from "../_generated/dataModel";
 
 /* -------------------------------------------------
@@ -90,7 +87,6 @@ export const getOne = query({
 ------------------------------------------------- */
 export const getMany = query({
   args: {
-    paginationOpts: v.optional(paginationOptsValidator),
     status: v.optional(
       v.union(
         v.literal("unresolved"),
@@ -100,10 +96,10 @@ export const getMany = query({
     ),
     chatbotId: v.optional(v.id("chatbots")),
     organizationId: v.string(),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    const pagination =
-      args.paginationOpts ?? { numItems: 50, cursor: null };
+    const pagination = args.paginationOpts;
 
     let conversations: PaginationResult<Doc<"conversations">>;
 

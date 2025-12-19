@@ -122,7 +122,7 @@ export default defineSchema({
     organizationId: v.string(),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.id("chatbots")),
-    caseId: v.string(),
+    caseId: v.optional(v.string()),
     status: v.union(
       v.literal("unresolved"),
       v.literal("escalated"),

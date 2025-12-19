@@ -539,9 +539,12 @@ function formatFileSize(bytes: number): string {
 function deduplicateFiles(files: PublicFile[]): PublicFile[] {
   const map = new Map<string, PublicFile>();
   for (const f of files) {
-    const existing = map.get(f.name);
+    // Create unique key combining file name and knowledge base ID
+    const key = `${f.name}-${f.knowledgeBaseId ?? "default"}`;
+    const existing = map.get(key);
+
     if (!existing) {
-      map.set(f.name, f);
+      map.set(key, f);
     } else {
       // Prioritize "ready" > "error" > "processing" status
       const statusPriority = { ready: 3, error: 2, processing: 1 };
@@ -549,7 +552,7 @@ function deduplicateFiles(files: PublicFile[]): PublicFile[] {
       const currentPriority = statusPriority[f.status] || 0;
 
       if (currentPriority > existingPriority) {
-        map.set(f.name, f);
+        map.set(key, f);
       }
     }
   }
