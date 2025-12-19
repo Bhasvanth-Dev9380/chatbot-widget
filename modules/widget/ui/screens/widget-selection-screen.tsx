@@ -4,7 +4,7 @@ import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@/components/ui/button";
 import { ChevronRightIcon, MessageSquareTextIcon,MicIcon, PhoneIcon } from "lucide-react";
 import { useSetAtom, useAtomValue } from "jotai";
-import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom} from"../../atoms/widget-atoms";
+import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom} from"../../atoms/widget-atoms";
 import {useMutation} from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useState } from "react";
@@ -14,6 +14,7 @@ export const WidgetSelectionScreen = () => {
 
   const setScreen = useSetAtom(screenAtom);
   const setErrorMessage = useSetAtom(errorMessageAtom);
+  const setIsVoiceConversation = useSetAtom(isVoiceConversationAtom);
 
   const widgetSettings =useAtomValue(widgetSettingsAtom);
   const hasVapiSecrets =useAtomValue(hasVapiSecretsAtom);
@@ -28,6 +29,35 @@ export const WidgetSelectionScreen = () => {
   const createConversation = useMutation(api.public.conversations.create);
   const [isPending, setIsPending] = useState(false);
 
+
+  const handleNewVoiceConversation = async () => {
+    if (!organizationId) {
+      setScreen("error");
+      setErrorMessage("Organization ID is missing");
+      return;
+    }
+
+    if (!contactSessionId) {
+      setScreen("auth");
+      return;
+    }
+
+    setIsPending(true);
+
+    try {
+      const conversationId = await createConversation({
+        contactSessionId,
+        organizationId,
+        chatbotId: chatbotId || undefined,
+      });
+      setConversationId(conversationId);
+      setScreen("voice");
+    } catch {
+      setScreen("auth");
+    } finally {
+      setIsPending(false);
+    }
+  };
 
   const handleNewConversation = async () => {
 
@@ -53,7 +83,7 @@ export const WidgetSelectionScreen = () => {
         chatbotId: chatbotId || undefined,
       });
       setConversationId(conversationId);
-
+      setIsVoiceConversation(false);
       setScreen("chat");
     } catch {
       setScreen("auth");
@@ -99,7 +129,7 @@ export const WidgetSelectionScreen = () => {
         <Button
           className="h-16 w-full justify-between"
           variant="outline"
-          onClick={() => setScreen("voice")}
+          onClick={handleNewVoiceConversation}
           disabled={isPending}
 
 

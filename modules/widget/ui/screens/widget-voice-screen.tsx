@@ -11,12 +11,27 @@ import {
 } from "@/components/ai/message";
 import { useVapi } from "@/modules/widget/hooks/use-vapi";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
-import { useSetAtom } from "jotai";
-import { screenAtom } from "../../atoms/widget-atoms";
+import { useAtomValue, useSetAtom } from "jotai";
+import { conversationIdAtom, screenAtom, organizationIdAtom, contactSessionIdAtomFamily } from "../../atoms/widget-atoms";
+import { useQuery } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 
 export const WidgetVoiceScreen = () => {
   const setScreen = useSetAtom(screenAtom);
+  const conversationId = useAtomValue(conversationIdAtom);
+  const organizationId = useAtomValue(organizationIdAtom);
+  const contactSessionId = useAtomValue(
+    contactSessionIdAtomFamily(organizationId || "")
+  );
+
+  const conversation = useQuery(
+    api.public.conversations.getOne,
+    conversationId && contactSessionId
+      ? { conversationId, contactSessionId }
+      : "skip"
+  );
+
   const {
     isConnected,
     isSpeaking,
@@ -24,7 +39,7 @@ export const WidgetVoiceScreen = () => {
     startCall,
     endCall,
     isConnecting,
-  } = useVapi();
+  } = useVapi(conversation?.threadId ?? null, contactSessionId);
 
   return (
     <>

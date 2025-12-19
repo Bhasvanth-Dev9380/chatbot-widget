@@ -4,7 +4,7 @@ import { ConversationStatusIcon } from "@/components/conversation-status-icon";
 import { useAtomValue, useSetAtom} from "jotai";
 import {formatDistanceToNow} from "date-fns";
 import { AlertTriangleIcon ,ArrowLeftIcon} from "lucide-react";
-import { contactSessionIdAtomFamily, conversationIdAtom,  organizationIdAtom, screenAtom } from "@/modules/widget/atoms/widget-atoms";
+import { contactSessionIdAtomFamily, conversationIdAtom, organizationIdAtom, screenAtom, isVoiceConversationAtom } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { WidgetFooter } from "../components/widget-footer";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 export const WidgetInboxScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
+  const setIsVoiceConversation = useSetAtom(isVoiceConversationAtom);
   const organizationId = useAtomValue(organizationIdAtom);
   const contactSessionId = useAtomValue(contactSessionIdAtomFamily(organizationId || "")
 
@@ -32,7 +33,19 @@ export const WidgetInboxScreen = () => {
   },
 );
 
-const { topElementRef, handleLoadMore, canLoadMore, isLoadingMore } = useInfiniteScroll({
+    const getConversationPreview = (lastMessage: any | null) => {
+    if (!lastMessage) return { text: "No messages yet", type: "Chat" };
+
+    const messageContent = lastMessage.text;
+
+    if (typeof messageContent === 'string' && messageContent.startsWith("[Voice]")) {
+      return { text: messageContent.replace("[Voice] ", ""), type: "Voice" };
+    }
+
+    return { text: messageContent || "", type: "Chat" };
+  };
+
+  const { topElementRef, handleLoadMore, canLoadMore, isLoadingMore } = useInfiniteScroll({
       status: conversations.status,
       loadMore: conversations.loadMore,
       loadSize: 10
@@ -64,6 +77,8 @@ conversations
               className="h-20 w-full justify-between"
               key={conversation._id}
               onClick={() => {
+                const preview = getConversationPreview(conversation.lastMessage);
+                setIsVoiceConversation(preview.type === "Voice");
                 setConversationId(conversation._id);
                 setScreen("chat");
               }}
@@ -71,21 +86,22 @@ conversations
             >
               <div className="flex w-full flex-col gap-4 overflow-hidden text-start">
                 <div className="flex w-full items-center justify-between gap-x-2">
-                  <p className="text-muted-foreground text-xs">Chat</p>
+                  <p className="text-muted-foreground text-xs">
+                    {getConversationPreview(conversation.lastMessage).type}
+                  </p>
                   <p className="text-muted-foreground text-xs">
                     {formatDistanceToNow(new Date(conversation._creationTime))}
                   </p>
                 </div>
                 <div className="flex w-full items-center justify-between gap-x-2">
                   <p className="truncate text-sm">
-                    {conversation.lastMessage?.text}
+                    {getConversationPreview(conversation.lastMessage).text}
                   </p>
                   <ConversationStatusIcon status = {conversation.status} />
 
                 </div>
 
               </div>
-
 
             </Button>
           ))

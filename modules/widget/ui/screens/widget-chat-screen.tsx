@@ -9,6 +9,7 @@ import {
   organizationIdAtom,
   contactSessionIdAtomFamily,
   screenAtom,
+  isVoiceConversationAtom,
   widgetSettingsAtom,
 } from "../../atoms/widget-atoms";
 import { api } from "../../../../convex/_generated/api";
@@ -57,12 +58,14 @@ const schema = z.object({
 export const WidgetChatScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
+  const setIsVoiceConversation = useSetAtom(isVoiceConversationAtom);
 
   const widgetSettings = useAtomValue(widgetSettingsAtom);
   const assistantLogoUrl = widgetSettings?.appearance?.logo?.url;
 
   const conversationId = useAtomValue(conversationIdAtom);
   const organizationId = useAtomValue(organizationIdAtom);
+  const isVoiceConversation = useAtomValue(isVoiceConversationAtom);
   const contactSessionId = useAtomValue(
     contactSessionIdAtomFamily(organizationId || "")
   );
@@ -195,6 +198,7 @@ form.reset();
               variant="transparent"
               onClick={() => {
                 setConversationId(null);
+                setIsVoiceConversation(false);
                 setScreen("selection");
               }}
             >
@@ -308,12 +312,15 @@ form.reset();
             render={({ field }) => (
               <AIInputTextarea
                 aria-label="Message input"
-                disabled={
+                disabled={isVoiceConversation ||
   typingState !== "idle" ||
   conversation?.status === "resolved"
 }
 
                 placeholder={
+                  isVoiceConversation
+                    ? "This is a voice transcript. You cannot reply."
+                    :
   conversation?.status === "resolved"
     ? "This conversation is closed"
     : typingState === "waiting_for_assistant"
@@ -339,7 +346,7 @@ form.reset();
           />
           <AIInputToolbar>
             <AIInputTools />
-            <AIInputSubmit disabled={typingState !== "idle"} />
+            <AIInputSubmit disabled={isVoiceConversation || typingState !== "idle"} />
           </AIInputToolbar>
         </AIInput>
       </Form>
