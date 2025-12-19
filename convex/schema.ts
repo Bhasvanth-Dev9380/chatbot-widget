@@ -122,7 +122,7 @@ export default defineSchema({
     organizationId: v.string(),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.id("chatbots")),
-    caseId: v.string(),
+    caseId: v.optional(v.string()),
     status: v.union(
       v.literal("unresolved"),
       v.literal("escalated"),
@@ -191,4 +191,27 @@ export default defineSchema({
   })
     .index("by_organization_id", ["organizationId"])
     .index("by_org_and_kb", ["organizationId", "knowledgeBaseId"]),
+
+  /* ───────── VOICE TRANSCRIPTS ───────── */
+  voiceTranscripts: defineTable({
+    organizationId: v.string(),
+    conversationId: v.optional(v.id("conversations")),
+    contactSessionId: v.id("contactSessions"),
+    chatbotId: v.optional(v.id("chatbots")),
+    callId: v.optional(v.string()),
+    transcript: v.array(
+      v.object({
+        role: v.union(v.literal("user"), v.literal("assistant")),
+        text: v.string(),
+        timestamp: v.optional(v.number()),
+      })
+    ),
+    duration: v.optional(v.number()),
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+  })
+    .index("by_organization_id", ["organizationId"])
+    .index("by_conversation_id", ["conversationId"])
+    .index("by_contact_session_id", ["contactSessionId"])
+    .index("by_chatbot_id", ["chatbotId"]),
 });

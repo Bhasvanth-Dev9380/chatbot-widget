@@ -12,6 +12,43 @@ import { createCustomAgentPrompt } from "../system/ai/constants";
 /* -------------------------------------------------
    CREATE MESSAGE (WIDGET → AGENT)
 ------------------------------------------------- */
+/* -------------------------------------------------
+   CREATE FROM TRANSCRIPT (VAPI -> AGENT)
+------------------------------------------------- */
+export const createFromTranscript = action({
+  args: {
+    threadId: v.string(),
+    contactSessionId: v.id("contactSessions"),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    text: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // 🔒 Validate session
+    const contactSession = await ctx.runQuery(
+      internal.system.contactSessions.getOne,
+      { contactSessionId: args.contactSessionId }
+    );
+
+    if (!contactSession || contactSession.expiresAt < Date.now()) {
+      throw new ConvexError("Invalid session");
+    }
+
+    // 🔄 Refresh session
+    await ctx.runMutation(internal.system.contactSessions.refresh, {
+      contactSessionId: args.contactSessionId,
+    });
+
+    // 💬 Save transcript message
+    await saveMessage(ctx, components.agent, {
+      threadId: args.threadId,
+      message: {
+        role: args.role,
+        content: args.text,
+      },
+    });
+  },
+});
+
 export const create = action({
   args: {
     prompt: v.string(),
@@ -38,9 +75,22 @@ export const create = action({
       throw new ConvexError("Conversation not found");
     }
 
-    if (conversation.status === "resolved") {
-      throw new ConvexError("Conversation resolved");
-    }
+    if (conversation.status !== "unresolved") {
+  // Save user message but DO NOT run the agent
+  await saveMessage(ctx, components.agent, {
+    threadId: args.threadId,
+    message: {
+      role: "user",
+      content: args.prompt,
+    },
+  });
+
+  // Stop here. No agent, no tools, no fallback AI.
+  return;
+}
+
+
+    
 
     // 🔄 Refresh session
     await ctx.runMutation(internal.system.contactSessions.refresh, {
@@ -90,6 +140,27 @@ export const create = action({
           { prompt: args.prompt }
         );
         console.log("✅ Custom agent completed. Result:", JSON.stringify(result, null, 2));
+
+        // Check if agent ended with tool calls instead of text
+        const lastStep = result.steps[result.steps.length - 1];
+        if (lastStep.finishReason === "tool-calls") {
+          console.warn("⚠️ Custom agent stopped at tool-calls without generating text response!");
+
+          // Extract tool result to send as the response
+          const toolResult = lastStep.content.find((c: any) => c.type === "tool-result") as any;
+          if (toolResult && toolResult.output) {
+            console.log("💡 Saving tool result as assistant message:", toolResult.output);
+            await saveMessage(ctx, components.agent, {
+              threadId: args.threadId,
+              message: {
+                role: "assistant",
+                content: String(toolResult.output),
+              },
+            });
+          } else {
+            console.error("❌ No tool result found to save for custom agent");
+          }
+        }
       } else {
         console.log("🤖 Using support agent");
         const result = await supportAgent.generateText(

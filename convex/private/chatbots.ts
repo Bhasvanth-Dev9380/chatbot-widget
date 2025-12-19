@@ -225,22 +225,16 @@ export const remove = mutation({
 export const getMany = query({
   args: {
     organizationId: v.string(),
-    paginationOpts: v.optional(paginationOptsValidator),
+    paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    const pagination =
-      args.paginationOpts ?? {
-        numItems: 100,
-        cursor: null,
-      };
-
     return ctx.db
       .query("chatbots")
       .withIndex("by_organization_id", (q) =>
         q.eq("organizationId", args.organizationId)
       )
       .order("desc")
-      .paginate(pagination);
+      .paginate(args.paginationOpts);
   },
 });
 
