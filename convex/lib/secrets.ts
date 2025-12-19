@@ -8,14 +8,27 @@ import {
 } from "@aws-sdk/client-secrets-manager";
 
 export function createSecretsManagerClient(): SecretsManagerClient {
-  return new SecretsManagerClient({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-  },
-})
+  const region = process.env.AWS_REGION;
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
 
+  if (!region) {
+    throw new Error("AWS_REGION environment variable is not set");
+  }
+  if (!accessKeyId) {
+    throw new Error("AWS_ACCESS_KEY_ID environment variable is not set");
+  }
+  if (!secretAccessKey) {
+    throw new Error("AWS_SECRET_ACCESS_KEY environment variable is not set");
+  }
+
+  return new SecretsManagerClient({
+    region,
+    credentials: {
+      accessKeyId,
+      secretAccessKey,
+    },
+  });
 };
 
 export async function getSecretValue(

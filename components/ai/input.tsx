@@ -78,7 +78,7 @@ export type AIInputProps = HTMLAttributes<HTMLFormElement>;
 export const AIInput = ({ className, ...props }: AIInputProps) => (
   <form
     className={cn(
-      "w-full divide-y overflow-hidden rounded-md border bg-background",
+      "w-full overflow-hidden rounded-2xl border bg-background shadow-sm",
       className
     )}
     {...props}
@@ -117,9 +117,10 @@ export const AIInputTextarea = ({
     <Textarea
       className={cn(
         "text-sm!",
-        "w-full resize-none rounded-none border-none p-3 shadow-none outline-none ring-0",
+        "w-full resize-none rounded-none border-none p-3.5 shadow-none outline-none ring-0",
         "bg-transparent dark:bg-transparent",
         "focus-visible:ring-0",
+        "placeholder:text-muted-foreground/60",
         className
       )}
       name="message"
@@ -142,7 +143,7 @@ export const AIInputToolbar = ({
   ...props
 }: AIInputToolbarProps) => (
   <div
-    className={cn("flex items-center justify-between p-1", className)}
+    className={cn("flex items-center justify-between border-t px-2 py-1.5", className)}
     {...props}
   />
 );
@@ -199,19 +200,19 @@ export const AIInputSubmit = ({
   children,
   ...props
 }: AIInputSubmitProps) => {
-  let Icon = <SendIcon />;
+  let Icon = <SendIcon className="h-4 w-4" />;
 
   if (status === "submitted") {
-    Icon = <Loader2Icon className="animate-spin" />;
+    Icon = <Loader2Icon className="h-4 w-4 animate-spin" />;
   } else if (status === "streaming") {
-    Icon = <SquareIcon />;
+    Icon = <SquareIcon className="h-3.5 w-3.5 fill-current" />;
   } else if (status === "error") {
-    Icon = <XIcon />;
+    Icon = <XIcon className="h-4 w-4" />;
   }
 
   return (
     <Button
-      className={cn("gap-1.5 rounded-md rounded-br-lg", className)}
+      className={cn("gap-1.5 rounded-xl transition-all", className)}
       size={size}
       type="submit"
       variant={variant}

@@ -1,8 +1,8 @@
 import { ConvexError, v } from "convex/values";
-import { mutation } from "../_generated/server";
+import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 
-export const upsert = mutation({
+export const upsert = action({
   args: {
     service: v.union(v.literal("vapi")),
     value: v.any(),
@@ -12,7 +12,8 @@ export const upsert = mutation({
   handler: async (ctx, args) => {
     const orgId = args.organizationId;
 
-    await ctx.scheduler.runAfter(0, internal.system.secrets.upsert, {
+    // Run synchronously so the plugin is created immediately
+    await ctx.runAction(internal.system.secrets.upsert, {
       service: args.service,
       organizationId: orgId,
       value: args.value,

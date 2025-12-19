@@ -13,7 +13,7 @@ export const AISuggestions = ({
   ...props
 }: AISuggestionsProps) => (
   <ScrollArea className="w-full overflow-x-auto whitespace-nowrap" {...props}>
-    <div className={cn("flex w-max flex-nowrap items-center gap-2", className)}>
+    <div className={cn("flex w-max flex-nowrap items-center gap-2 p-1", className)}>
       {children}
     </div>
     <ScrollBar className="hidden" orientation="horizontal" />
@@ -43,7 +43,11 @@ export const AISuggestion = ({
 
   return (
     <Button
-      className={cn("cursor-pointer rounded-full px-4", className)}
+      className={cn(
+        "cursor-pointer rounded-full px-4 text-xs font-medium",
+        "hover:bg-primary hover:text-primary-foreground transition-colors",
+        className
+      )}
       onClick={handleClick}
       size={size}
       type="button"
