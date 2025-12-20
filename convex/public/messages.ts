@@ -33,6 +33,19 @@ export const createFromTranscript = action({
       throw new ConvexError("Invalid session");
     }
 
+    const conversation = await ctx.runQuery(
+      internal.system.conversations.getByThreadId,
+      { threadId: args.threadId }
+    );
+
+    if (!conversation) {
+      throw new ConvexError("Conversation not found");
+    }
+
+    if (conversation.contactSessionId !== args.contactSessionId) {
+      throw new ConvexError("Incorrect session");
+    }
+
     // 🔄 Refresh session
     await ctx.runMutation(internal.system.contactSessions.refresh, {
       contactSessionId: args.contactSessionId,
@@ -73,6 +86,10 @@ export const create = action({
 
     if (!conversation) {
       throw new ConvexError("Conversation not found");
+    }
+
+    if (conversation.contactSessionId !== args.contactSessionId) {
+      throw new ConvexError("Incorrect session");
     }
 
     if (conversation.status !== "unresolved") {
@@ -243,6 +260,19 @@ export const getMany = query({
 
     if (!session || session.expiresAt < Date.now()) {
       throw new ConvexError("Invalid session");
+    }
+
+    const conversation = await ctx.runQuery(
+      internal.system.conversations.getByThreadId,
+      { threadId: args.threadId },
+    );
+
+    if (!conversation) {
+      throw new ConvexError("Conversation not found");
+    }
+
+    if (conversation.contactSessionId !== args.contactSessionId) {
+      throw new ConvexError("Incorrect session");
     }
 
     return await supportAgent.listMessages(ctx, {

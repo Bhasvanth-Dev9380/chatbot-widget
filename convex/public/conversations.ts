@@ -12,6 +12,7 @@ import { generateCaseId } from "../lib/generateCaseId";
 export const getMany = query({
   args: {
     contactSessionId: v.id("contactSessions"),
+    chatbotId: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -24,13 +25,36 @@ export const getMany = query({
       });
     }
 
-    const conversations = await ctx.db
+    let chatbotDocId:
+      | import("../_generated/dataModel").Id<"chatbots">
+      | null = null;
+
+    if (args.chatbotId) {
+      const chatbot = await ctx.db
+        .query("chatbots")
+        .withIndex("by_chatbot_id", (q) => q.eq("chatbotId", args.chatbotId))
+        .unique();
+
+      // If chatbotId is provided but invalid/wrong org, do not leak other bot conversations.
+      if (!chatbot || chatbot.organizationId !== session.organizationId) {
+        return { page: [], isDone: true, continueCursor: null };
+      }
+
+      chatbotDocId = chatbot._id;
+    }
+
+    const baseQuery = ctx.db
       .query("conversations")
       .withIndex("by_contact_session_id", (q) =>
         q.eq("contactSessionId", args.contactSessionId),
-      )
-      .order("desc")
-      .paginate(args.paginationOpts);
+      );
+
+    const conversations = await (chatbotDocId
+      ? baseQuery
+          .filter((q) => q.eq(q.field("chatbotId"), chatbotDocId))
+          .order("desc")
+          .paginate(args.paginationOpts)
+      : baseQuery.order("desc").paginate(args.paginationOpts));
 
     const page = await Promise.all(
       conversations.page.map(async (conversation) => {
@@ -123,6 +147,13 @@ export const create = mutation({
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Invalid session",
+      });
+    }
+
+    if (session.organizationId !== args.organizationId) {
+      throw new ConvexError({
+        code: "UNAUTHORIZED",
+        message: "Invalid Organization ID",
       });
     }
 

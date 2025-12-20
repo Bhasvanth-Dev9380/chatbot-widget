@@ -148,6 +148,11 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
         setLoadingMessage("Loading chatbot settings...");
 
         if (widgetSettings !== undefined) {
+          if (widgetSettings === null) {
+            setErrorMessage("Chatbot not found or no longer available");
+            setScreen("error");
+            return;
+          }
           const settings = toWidgetSettings(widgetSettings);
           setWidgetSettings(settings);
 

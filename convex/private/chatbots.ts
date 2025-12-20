@@ -90,7 +90,7 @@ export const update = mutation({
       v.object({
         primaryColor: v.optional(v.string()),
         size: v.optional(
-          v.union(v.literal("small"), v.literal("medium"), v.literal("large"))
+          v.union(v.number(), v.literal("small"), v.literal("medium"), v.literal("large"))
         ),
         logo: v.optional(
           v.object({
@@ -162,7 +162,16 @@ export const update = mutation({
     if (args.appearance !== undefined) {
       // Merge with existing appearance to preserve logo if not provided
       const existingAppearance = chatbot.appearance || {};
-      updates.appearance = { ...existingAppearance, ...args.appearance };
+      const appearanceUpdates: Record<string, unknown> = { ...args.appearance };
+      if (typeof appearanceUpdates.size === "string") {
+        const legacySizes: Record<string, number> = {
+          small: 368,
+          medium: 418,
+          large: 468,
+        };
+        appearanceUpdates.size = legacySizes[appearanceUpdates.size] ?? existingAppearance.size;
+      }
+      updates.appearance = { ...existingAppearance, ...appearanceUpdates };
     }
     if (args.customSystemPrompt !== undefined)
       updates.customSystemPrompt = args.customSystemPrompt;

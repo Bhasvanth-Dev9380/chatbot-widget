@@ -80,7 +80,11 @@ export const getChatbotSettings = query({
         )
         .unique();
 
-      if (chatbot && chatbot.organizationId === args.organizationId) {
+      if (
+        chatbot &&
+        chatbot.organizationId === args.organizationId &&
+        (chatbot as any).isActive !== false
+      ) {
         return {
           chatbotId: chatbot.chatbotId,
           chatbotName: chatbot.name,
@@ -94,6 +98,8 @@ export const getChatbotSettings = query({
           vapiSettings: chatbot.vapiSettings ?? {}, // ✅ FIX
         };
       }
+
+      return null;
     }
 
     /* -----------------------------
