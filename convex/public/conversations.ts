@@ -37,7 +37,7 @@ export const getMany = query({
 
       // If chatbotId is provided but invalid/wrong org, do not leak other bot conversations.
       if (!chatbot || chatbot.organizationId !== session.organizationId) {
-        return { page: [], isDone: true, continueCursor: null };
+        return { page: [], isDone: true, continueCursor: "" };
       }
 
       chatbotDocId = chatbot._id;
