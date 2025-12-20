@@ -215,11 +215,6 @@ form.reset();
             <MenuIcon />
           </Button>
         </div>
-        {conversation?.caseId && (
-          <div className="ml-12 text-xs text-muted-foreground">
-            Case ID: {conversation.caseId}
-          </div>
-        )}
       </WidgetHeader>
 
       <AIConversation>

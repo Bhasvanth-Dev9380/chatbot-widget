@@ -18,7 +18,7 @@ export const logoSchema = v.object({
 export const appearanceSchema = v.object({
   primaryColor: v.optional(v.string()),
   size: v.optional(
-    v.union(v.literal("small"), v.literal("medium"), v.literal("large"))
+    v.union(v.number(), v.literal("small"), v.literal("medium"), v.literal("large"))
   ),
   logo: v.optional(logoSchema),
 });
@@ -191,6 +191,17 @@ export default defineSchema({
   })
     .index("by_organization_id", ["organizationId"])
     .index("by_org_and_kb", ["organizationId", "knowledgeBaseId"]),
+
+  /* ───────── DELETED FILES (TOMBSTONES) ───────── */
+  deletedFiles: defineTable({
+    organizationId: v.string(),
+    knowledgeBaseId: v.optional(v.string()),
+    storageId: v.id("_storage"),
+    deletedAt: v.number(),
+  })
+    .index("by_organization_id", ["organizationId"])
+    .index("by_org_and_kb", ["organizationId", "knowledgeBaseId"])
+    .index("by_org_and_storage", ["organizationId", "storageId"]),
 
   /* ───────── VOICE TRANSCRIPTS ───────── */
   voiceTranscripts: defineTable({

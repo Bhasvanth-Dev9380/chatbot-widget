@@ -66,6 +66,7 @@ export const processFile = internalAction({
           text: chunk,
           key: chunkKey,
           title: args.displayName,
+          filterValues: [{ name: "storageId", value: args.storageId }],
           metadata: {
             storageId: args.storageId,
             uploadedBy: args.orgId,
@@ -154,6 +155,203 @@ export const processFile = internalAction({
         fileId: args.entryId,
         fileName: args.displayName,
       });
+    }
+  },
+});
+
+// Delete file chunks asynchronously by storageId (recommended for large files)
+export const deleteFileByStorageId = internalAction({
+  args: {
+    entryId: v.string(),
+    displayName: v.string(),
+    storageId: v.id("_storage"),
+    namespace: v.string(),
+    orgId: v.string(),
+    knowledgeBaseId: v.union(v.string(), v.null()),
+    cursor: v.optional(v.string()),
+    pass: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const pass = typeof args.pass === "number" ? args.pass : 0;
+    console.log(
+      `[deleteFileByStorageId] Starting async deletion for "${args.displayName}" (pass=${pass}, cursor=${args.cursor ?? "null"})`,
+    );
+
+    try {
+      const namespace = await rag.getNamespace(ctx, {
+        namespace: args.namespace,
+      });
+
+      if (!namespace) {
+        console.error(`[deleteFileByStorageId] Namespace "${args.namespace}" not found`);
+        try {
+          await ctx.runMutation(internal.system.fileProcessor.deleteDeletedFileTombstone, {
+            organizationId: args.orgId,
+            storageId: args.storageId,
+          });
+        } catch (error) {
+          console.error(`[deleteFileByStorageId] Failed to delete tombstone:`, error);
+        }
+        await ctx.runMutation(internal.private.notifications.create, {
+          organizationId: args.orgId,
+          type: "file_ready",
+          title: "✓ Deletion complete",
+          message: `"${args.displayName}" was removed`,
+          fileId: args.entryId,
+          fileName: args.displayName,
+        });
+        return;
+      }
+
+      // Process in small batches and reschedule to avoid timeouts on large namespaces/files.
+      const BATCH_SIZE = 200;
+      const res = await rag.list(ctx, {
+        namespaceId: namespace.namespaceId,
+        paginationOpts: { numItems: BATCH_SIZE, cursor: args.cursor ?? null },
+      });
+
+      let deletedCount = 0;
+      for (const entry of res.page) {
+        const metadata = entry.metadata as any;
+        if (metadata?.storageId === args.storageId) {
+          try {
+            await rag.delete(ctx, { entryId: entry.entryId });
+            deletedCount++;
+          } catch (error) {
+            console.error(
+              `[deleteFileByStorageId] Failed to delete chunk ${entry.entryId}:`,
+              error,
+            );
+          }
+        }
+      }
+
+      console.log(
+        `[deleteFileByStorageId] Batch scanned=${res.page.length}, deleted=${deletedCount}, isDone=${res.isDone} for "${args.displayName}"`,
+      );
+
+      // Reactive refresh each batch so UI doesn't get stuck in "deleting" without updates.
+      try {
+        await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
+          organizationId: args.orgId,
+          knowledgeBaseId: args.knowledgeBaseId ?? undefined,
+        });
+      } catch (error) {
+        console.error(`[deleteFileByStorageId] Failed to track file change:`, error);
+      }
+
+      if (!res.isDone && res.continueCursor) {
+        // Continue scanning the namespace.
+        await ctx.scheduler.runAfter(0, internal.system.fileProcessor.deleteFileByStorageId, {
+          entryId: args.entryId,
+          displayName: args.displayName,
+          storageId: args.storageId,
+          namespace: args.namespace,
+          orgId: args.orgId,
+          knowledgeBaseId: args.knowledgeBaseId,
+          cursor: res.continueCursor,
+          pass: pass + 1,
+        });
+        return;
+      }
+
+      // Once namespace scan is complete, delete the storage object last.
+      try {
+        await ctx.storage.delete(args.storageId);
+      } catch (error) {
+        console.error(`[deleteFileByStorageId] Error deleting storage file:`, error);
+      }
+
+      // Completion notification
+      try {
+        await ctx.runMutation(internal.private.notifications.create, {
+          organizationId: args.orgId,
+          type: "file_ready",
+          title: "✓ Deletion complete",
+          message: `"${args.displayName}" was successfully removed from your knowledge base`,
+          fileId: args.entryId,
+          fileName: args.displayName,
+        });
+      } catch (error) {
+        console.error(`[deleteFileByStorageId] Failed to create success notification:`, error);
+      }
+
+      // Remove tombstone so the file disappears only after deletion is fully done
+      try {
+        await ctx.runMutation(internal.system.fileProcessor.deleteDeletedFileTombstone, {
+          organizationId: args.orgId,
+          storageId: args.storageId,
+        });
+      } catch (error) {
+        console.error(`[deleteFileByStorageId] Failed to delete tombstone:`, error);
+      }
+
+      // Reactive refresh
+      try {
+        await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
+          organizationId: args.orgId,
+          knowledgeBaseId: args.knowledgeBaseId ?? undefined,
+        });
+      } catch (error) {
+        console.error(`[deleteFileByStorageId] Failed to track file change:`, error);
+      }
+    } catch (error) {
+      console.error(`[deleteFileByStorageId] Error deleting "${args.displayName}":`, error);
+      await ctx.runMutation(internal.private.notifications.create, {
+        organizationId: args.orgId,
+        type: "file_failed",
+        title: "File deletion failed",
+        message: `Failed to delete "${args.displayName}": ${error instanceof Error ? error.message : "Unknown error"}`,
+        fileId: args.entryId,
+        fileName: args.displayName,
+      });
+
+      // Retry once quickly; if it keeps failing, tombstone remains so content stays excluded from search.
+      const pass = typeof args.pass === "number" ? args.pass : 0;
+      if (pass < 5) {
+        try {
+          await ctx.scheduler.runAfter(1000, internal.system.fileProcessor.deleteFileByStorageId, {
+            entryId: args.entryId,
+            displayName: args.displayName,
+            storageId: args.storageId,
+            namespace: args.namespace,
+            orgId: args.orgId,
+            knowledgeBaseId: args.knowledgeBaseId,
+            cursor: args.cursor ?? undefined,
+            pass: pass + 1,
+          });
+        } catch (schedError) {
+          console.error(`[deleteFileByStorageId] Failed to schedule retry:`, schedError);
+        }
+      }
+
+      // Reactive refresh (so UI doesn't get stuck)
+      try {
+        await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
+          organizationId: args.orgId,
+          knowledgeBaseId: args.knowledgeBaseId ?? undefined,
+        });
+      } catch (error) {
+        console.error(`[deleteFileByStorageId] Failed to track file change after failure:`, error);
+      }
+    }
+  },
+});
+
+export const deleteDeletedFileTombstone = internalMutation({
+  args: {
+    organizationId: v.string(),
+    storageId: v.id("_storage"),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query("deletedFiles")
+      .withIndex("by_org_and_storage", (q) =>
+        q.eq("organizationId", args.organizationId).eq("storageId", args.storageId),
+      )
+      .first();
+    if (existing) {
+      await ctx.db.delete(existing._id);
     }
   },
 });

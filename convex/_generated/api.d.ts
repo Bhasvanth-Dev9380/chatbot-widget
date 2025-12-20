@@ -17,6 +17,7 @@ import type * as migrations_addCaseIdToExistingConversations from "../migrations
 import type * as migrations_addIsActiveField from "../migrations/addIsActiveField.js";
 import type * as migrations_cleanupKnowledgeBaseNamespace from "../migrations/cleanupKnowledgeBaseNamespace.js";
 import type * as migrations_fixKnowledgeBases from "../migrations/fixKnowledgeBases.js";
+import type * as private_analytics from "../private/analytics.js";
 import type * as private_chatbots from "../private/chatbots.js";
 import type * as private_contactSessions from "../private/contactSessions.js";
 import type * as private_conversations from "../private/conversations.js";
@@ -47,6 +48,7 @@ import type * as system_ai_tools_search from "../system/ai/tools/search.js";
 import type * as system_chatbots from "../system/chatbots.js";
 import type * as system_contactSessions from "../system/contactSessions.js";
 import type * as system_conversations from "../system/conversations.js";
+import type * as system_deletedFiles from "../system/deletedFiles.js";
 import type * as system_fileProcessor from "../system/fileProcessor.js";
 import type * as system_knowledgeBases from "../system/knowledgeBases.js";
 import type * as system_plugin from "../system/plugin.js";
@@ -70,6 +72,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/addIsActiveField": typeof migrations_addIsActiveField;
   "migrations/cleanupKnowledgeBaseNamespace": typeof migrations_cleanupKnowledgeBaseNamespace;
   "migrations/fixKnowledgeBases": typeof migrations_fixKnowledgeBases;
+  "private/analytics": typeof private_analytics;
   "private/chatbots": typeof private_chatbots;
   "private/contactSessions": typeof private_contactSessions;
   "private/conversations": typeof private_conversations;
@@ -100,6 +103,7 @@ declare const fullApi: ApiFromModules<{
   "system/chatbots": typeof system_chatbots;
   "system/contactSessions": typeof system_contactSessions;
   "system/conversations": typeof system_conversations;
+  "system/deletedFiles": typeof system_deletedFiles;
   "system/fileProcessor": typeof system_fileProcessor;
   "system/knowledgeBases": typeof system_knowledgeBases;
   "system/plugin": typeof system_plugin;
