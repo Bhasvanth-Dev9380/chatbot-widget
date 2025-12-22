@@ -54,6 +54,8 @@ export default defineSchema({
     chatbotId: v.optional(v.string()),
     appearance: v.optional(appearanceSchema),
     customSystemPrompt: v.optional(v.string()),
+    aiAvatarEnabled: v.optional(v.boolean()),
+    beyondPresenceAgentId: v.optional(v.string()),
     vapiSettings: v.optional(
       v.object({
         assistantId: v.optional(v.string()),
@@ -110,7 +112,7 @@ export default defineSchema({
   /* ───────── PLUGINS ───────── */
   plugins: defineTable({
     organizationId: v.string(),
-    service: v.union(v.literal("vapi")),
+    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
     secretName: v.string(),
   })
     .index("by_organization_id", ["organizationId"])

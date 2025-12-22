@@ -49,3 +49,38 @@ export const getVapiSecrets = action({
 
   },
 });
+
+export const getBeyondPresenceConfig = action({
+  args: {
+    organizationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const plugin = await ctx.runQuery(
+      internal.system.plugin.getByOrganizationIdAndService,
+      {
+        organizationId: args.organizationId,
+        service: "beyond_presence",
+      },
+    );
+
+    if (!plugin) {
+      return null;
+    }
+
+    const secret = await getSecretValue(plugin.secretName);
+    const secretData = parseSecretString<{
+      apiKey: string;
+      baseUrl?: string;
+      avatarId?: string;
+    }>(secret);
+
+    if (!secretData?.apiKey) {
+      return null;
+    }
+
+    return {
+      avatarId: secretData.avatarId ?? "",
+      baseUrl: secretData.baseUrl ?? "https://api.bey.dev",
+    };
+  },
+});

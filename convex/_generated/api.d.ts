@@ -18,6 +18,7 @@ import type * as migrations_addIsActiveField from "../migrations/addIsActiveFiel
 import type * as migrations_cleanupKnowledgeBaseNamespace from "../migrations/cleanupKnowledgeBaseNamespace.js";
 import type * as migrations_fixKnowledgeBases from "../migrations/fixKnowledgeBases.js";
 import type * as private_analytics from "../private/analytics.js";
+import type * as private_beyondPresence from "../private/beyondPresence.js";
 import type * as private_chatbots from "../private/chatbots.js";
 import type * as private_contactSessions from "../private/contactSessions.js";
 import type * as private_conversations from "../private/conversations.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/cleanupKnowledgeBaseNamespace": typeof migrations_cleanupKnowledgeBaseNamespace;
   "migrations/fixKnowledgeBases": typeof migrations_fixKnowledgeBases;
   "private/analytics": typeof private_analytics;
+  "private/beyondPresence": typeof private_beyondPresence;
   "private/chatbots": typeof private_chatbots;
   "private/contactSessions": typeof private_contactSessions;
   "private/conversations": typeof private_conversations;

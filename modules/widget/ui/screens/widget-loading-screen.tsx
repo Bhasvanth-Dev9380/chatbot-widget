@@ -3,7 +3,7 @@ import { useState,useEffect } from "react";
 import { useSetAtom, useAtomValue } from "jotai";
 import {  LoaderIcon } from "lucide-react";
 import { chatbotIdAtom, contactSessionIdAtomFamily, errorMessageAtom, 
-  loadingMessageAtom, organizationIdAtom, screenAtom ,vapiSecretsAtom, widgetSettingsAtom, type WidgetSettings } from "@/modules/widget/atoms/widget-atoms";
+  loadingMessageAtom, organizationIdAtom, screenAtom ,vapiSecretsAtom, widgetSettingsAtom, beyondPresenceConfigAtom, type WidgetSettings } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { api } from "../../../../convex/_generated/api";
 import { useAction,useMutation, useQuery } from "convex/react";
@@ -35,6 +35,7 @@ export const WidgetLoadingScreen = ({ organizationId, chatbotId }: { organizatio
 );
 
 const setVapiSecrets = useSetAtom(vapiSecretsAtom);
+  const setBeyondPresenceConfig = useSetAtom(beyondPresenceConfigAtom);
   const contactSessionId = useAtomValue(contactSessionIdAtomFamily(organizationId || ""));
 
   // Fetch widget settings immediately for appearance
@@ -196,6 +197,9 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
 
       //step4
       const getVapiSecrets = useAction(api.public.secrets.getVapiSecrets);
+      const getBeyondPresenceConfig = useAction(
+        api.public.secrets.getBeyondPresenceConfig,
+      );
 
       useEffect(() => {
         if (step !== "vapi") {
@@ -212,18 +216,24 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
         getVapiSecrets({ organizationId })
             .then((secrets) =>{
               setVapiSecrets(secrets);
+              return getBeyondPresenceConfig({ organizationId });
+            })
+            .then((config) => {
+              setBeyondPresenceConfig(config);
               setStep("done");
             })
             .catch(() => {
               setVapiSecrets(null);
+              setBeyondPresenceConfig(null);
               setStep("done");
-
             })
       }, [
         step,
         organizationId,
         getVapiSecrets,
+        getBeyondPresenceConfig,
         setVapiSecrets,
+        setBeyondPresenceConfig,
         setLoadingMessage,
         setStep,
 
@@ -279,6 +289,8 @@ function toWidgetSettings(settings: any): WidgetSettings {
     return {
       chatbotName: "Support Assistant",
       greetMessage: "Hi! How can I help you?",
+      aiAvatarEnabled: false,
+      beyondPresenceAgentId: undefined,
       defaultSuggestions: {},
       vapiSettings: {},
     };
@@ -289,6 +301,8 @@ function toWidgetSettings(settings: any): WidgetSettings {
     chatbotName: settings.chatbotName ?? "Support Assistant",
     greetMessage: settings.greetMessage ?? "Hi! How can I help you?",
     customSystemPrompt: settings.customSystemPrompt ?? undefined,
+    aiAvatarEnabled: settings.aiAvatarEnabled ?? false,
+    beyondPresenceAgentId: settings.beyondPresenceAgentId ?? undefined,
     appearance: settings.appearance ?? undefined,
     defaultSuggestions: {
       suggestion1: settings.defaultSuggestions?.suggestion1 ?? undefined,

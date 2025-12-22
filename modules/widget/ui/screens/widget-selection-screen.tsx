@@ -2,7 +2,7 @@
 
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@/components/ui/button";
-import { ChevronRightIcon, MessageSquareTextIcon,MicIcon, PhoneIcon } from "lucide-react";
+import { ChevronRightIcon, MessageSquareTextIcon,MicIcon, PhoneIcon, VideoIcon } from "lucide-react";
 import { useSetAtom, useAtomValue } from "jotai";
 import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom} from"../../atoms/widget-atoms";
 import {useMutation} from "convex/react";
@@ -18,6 +18,10 @@ export const WidgetSelectionScreen = () => {
 
   const widgetSettings =useAtomValue(widgetSettingsAtom);
   const hasVapiSecrets =useAtomValue(hasVapiSecretsAtom);
+
+  const hasAvatar = Boolean(
+    widgetSettings?.aiAvatarEnabled && widgetSettings?.beyondPresenceAgentId,
+  );
 
   const setConversationId = useSetAtom(conversationIdAtom);
   const organizationId = useAtomValue(organizationIdAtom);
@@ -120,6 +124,21 @@ export const WidgetSelectionScreen = () => {
           </div>
           <ChevronRightIcon />
         </Button>
+
+        {hasAvatar && (
+          <Button
+            className="h-16 w-full justify-between"
+            variant="outline"
+            onClick={() => setScreen("avatar")}
+            disabled={isPending}
+          >
+            <div className="flex items-center gap-x-2">
+              <VideoIcon className="size-4" />
+              <span>Start AI Avatar</span>
+            </div>
+            <ChevronRightIcon />
+          </Button>
+        )}
   {hasVapiSecrets && widgetSettings?.vapiSettings?.assistantId && (
         <Button
           className="h-16 w-full justify-between"
