@@ -33,6 +33,35 @@ export const WidgetSelectionScreen = () => {
   const createConversation = useMutation(api.public.conversations.create);
   const [isPending, setIsPending] = useState(false);
 
+  const handleNewVideoConversation = async () => {
+    if (!organizationId) {
+      setScreen("error");
+      setErrorMessage("Organization ID is missing");
+      return;
+    }
+
+    if (!contactSessionId) {
+      setScreen("auth");
+      return;
+    }
+
+    setIsPending(true);
+
+    try {
+      const conversationId = await createConversation({
+        contactSessionId,
+        organizationId,
+        chatbotId: chatbotId || undefined,
+      });
+      setConversationId(conversationId);
+      setScreen("avatar");
+    } catch {
+      setScreen("auth");
+    } finally {
+      setIsPending(false);
+    }
+  };
+
 
   const handleNewVoiceConversation = async () => {
     if (!organizationId) {
@@ -129,12 +158,12 @@ export const WidgetSelectionScreen = () => {
           <Button
             className="h-16 w-full justify-between"
             variant="outline"
-            onClick={() => setScreen("avatar")}
+            onClick={handleNewVideoConversation}
             disabled={isPending}
           >
             <div className="flex items-center gap-x-2">
               <VideoIcon className="size-4" />
-              <span>Start AI Avatar</span>
+              <span>Start Video Call</span>
             </div>
             <ChevronRightIcon />
           </Button>

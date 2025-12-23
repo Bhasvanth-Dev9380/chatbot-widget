@@ -314,7 +314,7 @@ form.reset();
 
                 placeholder={
                   isVoiceConversation
-                    ? "This is a voice transcript. You cannot reply."
+                    ? "This is a transcript. You cannot reply."
                     :
   conversation?.status === "resolved"
     ? "This conversation is closed"

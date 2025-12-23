@@ -5,6 +5,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { Button } from "@/components/ui/button";
 import { widgetSettingsAtom, screenAtom } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
+import { useEffect } from "react";
 
 export const WidgetAvatarScreen = () => {
   const setScreen = useSetAtom(screenAtom);
@@ -12,6 +13,40 @@ export const WidgetAvatarScreen = () => {
 
   const agentId = widgetSettings?.beyondPresenceAgentId;
   const isSecureContext = typeof window !== "undefined" ? window.isSecureContext : true;
+
+  useEffect(() => {
+    const size = widgetSettings?.appearance?.size ?? "medium";
+
+    const configured =
+      size === "small"
+        ? { width: 368, height: 460 }
+        : size === "large"
+          ? { width: 468, height: 560 }
+          : { width: 418, height: 510 };
+
+    const videoTarget = {
+      width: Math.max(configured.width, 512),
+      height: Math.max(configured.height,700),
+    };
+
+    window.parent.postMessage(
+      {
+        type: "resize",
+        payload: videoTarget,
+      },
+      "*",
+    );
+
+    return () => {
+      window.parent.postMessage(
+        {
+          type: "resize",
+          payload: configured,
+        },
+        "*",
+      );
+    };
+  }, [widgetSettings?.appearance?.size]);
 
   return (
     <>

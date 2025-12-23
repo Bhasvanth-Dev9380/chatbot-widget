@@ -69,7 +69,8 @@ export default defineSchema({
     .index("by_organization_id", ["organizationId"])
     .index("by_organization_and_active", ["organizationId", "isActive"])
     .index("by_knowledge_base_id", ["knowledgeBaseId"])
-    .index("by_chatbot_id", ["chatbotId"]),
+    .index("by_chatbot_id", ["chatbotId"])
+    .index("by_beyond_presence_agent_id", ["beyondPresenceAgentId"]),
 
   /* ───────── KNOWLEDGE BASES ───────── */
   knowledgeBases: defineTable({
@@ -227,4 +228,15 @@ export default defineSchema({
     .index("by_conversation_id", ["conversationId"])
     .index("by_contact_session_id", ["contactSessionId"])
     .index("by_chatbot_id", ["chatbotId"]),
+
+  beyondPresenceCallLinks: defineTable({
+    callId: v.string(),
+    conversationId: v.id("conversations"),
+    threadId: v.string(),
+    lastProcessedSentAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_call_id", ["callId"])
+    .index("by_conversation_id", ["conversationId"]),
 });
