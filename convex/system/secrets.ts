@@ -6,11 +6,12 @@ import { upsertSecret } from "../lib/secrets";
 export const upsert = internalAction({
   args: {
     organizationId: v.string(),
-    service: v.union(v.literal("vapi")),
+    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
     value: v.any(),
   },
   handler: async (ctx, args) => {
   const secretName = `tenant/${args.organizationId}/${args.service}`;
+
   await upsertSecret(secretName, args.value);
 
   await ctx.runMutation(internal.system.plugin.upsert, {

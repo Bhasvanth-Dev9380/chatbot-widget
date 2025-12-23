@@ -57,6 +57,7 @@ export const create = mutation({
       defaultSuggestions: args.defaultSuggestions,
       isActive: true,
       isDefault: args.isDefault ?? false,
+      aiAvatarEnabled: false,
       chatbotId, // Set the string chatbotId for embed snippets
       createdAt: now,
       updatedAt: now,
@@ -106,6 +107,8 @@ export const update = mutation({
       })
     ),
     customSystemPrompt: v.optional(v.string()),
+    aiAvatarEnabled: v.optional(v.boolean()),
+    beyondPresenceAgentId: v.optional(v.string()),
     vapiSettings: v.optional(
       v.object({
         assistantId: v.optional(v.string()),
@@ -175,6 +178,10 @@ export const update = mutation({
     }
     if (args.customSystemPrompt !== undefined)
       updates.customSystemPrompt = args.customSystemPrompt;
+    if (args.aiAvatarEnabled !== undefined)
+      updates.aiAvatarEnabled = args.aiAvatarEnabled;
+    if (args.beyondPresenceAgentId !== undefined)
+      updates.beyondPresenceAgentId = args.beyondPresenceAgentId;
     if (args.vapiSettings !== undefined)
       updates.vapiSettings = args.vapiSettings;
 

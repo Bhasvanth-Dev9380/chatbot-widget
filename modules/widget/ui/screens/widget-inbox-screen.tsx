@@ -44,6 +44,10 @@ export const WidgetInboxScreen = () => {
       return { text: messageContent.replace("[Voice] ", ""), type: "Voice" };
     }
 
+    if (typeof messageContent === 'string' && messageContent.startsWith("[Video]")) {
+      return { text: messageContent.replace("[Video] ", ""), type: "Video" };
+    }
+
     return { text: messageContent || "", type: "Chat" };
   };
 
@@ -76,7 +80,7 @@ export const WidgetInboxScreen = () => {
               key={conversation._id}
               onClick={() => {
                 const preview = getConversationPreview(conversation.lastMessage);
-                setIsVoiceConversation(preview.type === "Voice");
+                setIsVoiceConversation(preview.type === "Voice" || preview.type === "Video");
                 setConversationId(conversation._id);
                 setScreen("chat");
               }}

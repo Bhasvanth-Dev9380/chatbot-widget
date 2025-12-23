@@ -3,6 +3,7 @@ export const WIDGET_SCREENS = [
   "loading",
   "selection",
   "voice",
+  "avatar",
   "auth",
   "inbox",
   "chat",
