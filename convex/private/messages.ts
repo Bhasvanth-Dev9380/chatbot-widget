@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { supportAgent } from "../system/ai/agents/supportAgent";
 import { paginationOptsValidator } from "convex/server";
 import { saveMessage } from "@convex-dev/agent";
-import { components } from "../_generated/api";
+import { components, internal } from "../_generated/api";
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { OPERATOR_MESSAGE_ENHANCEMENT_PROMPT } from "../system/ai/constants";
@@ -16,7 +16,7 @@ export const enhanceResponse = action({
     prompt: v.string(),
     organizationId: v.string(), // passed from BetterAuth
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
     const response = await generateText({
       model: openai("gpt-4o-mini") as any,
       messages: [
@@ -30,6 +30,28 @@ export const enhanceResponse = action({
         },
       ],
     });
+
+    const usage = (response as any)?.usage;
+    const totalTokens =
+      typeof usage?.totalTokens === "number"
+        ? usage.totalTokens
+        : Math.ceil(String(response?.text ?? "").length / 4);
+
+    if (totalTokens > 0) {
+      await ctx.runMutation((internal as any).system.tokenUsage.record, {
+        organizationId: args.organizationId,
+        provider: "openai",
+        model: "gpt-4o-mini",
+        kind: "operator_enhance",
+        promptTokens:
+          typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+        completionTokens:
+          typeof usage?.completionTokens === "number"
+            ? usage.completionTokens
+            : undefined,
+        totalTokens,
+      });
+    }
 
     return response.text;
   },

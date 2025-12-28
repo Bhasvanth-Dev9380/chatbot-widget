@@ -220,6 +220,19 @@ export const createFileAfterUpload = mutation({
       entryId: placeholder.entryId,
     });
 
+    await ctx.scheduler.runAfter(
+      15_000,
+      internal.system.fileProcessor.finalizeFileProcessingNotification,
+      {
+        orgId: args.organizationId,
+        entryId: placeholder.entryId,
+        displayName,
+        storageId: args.storageId,
+        namespace,
+        knowledgeBaseId: args.knowledgeBaseId ?? null,
+      },
+    );
+
     return placeholder.entryId;
   },
 });
