@@ -21,6 +21,7 @@ export const processFile = internalAction({
     entryId: v.string(),
   },
   handler: async (ctx, args) => {
+    console.log(`ORG_CONTEXT|${args.orgId}`);
     console.log(`[processFile] Starting async processing for "${args.displayName}"`);
 
     try {
@@ -33,12 +34,20 @@ export const processFile = internalAction({
       // Convert blob to ArrayBuffer
       const bytes = await blob.arrayBuffer();
 
+      if (bytes.byteLength > 0) {
+        await ctx.runMutation((internal as any).system.convexUsageEstimated.record, {
+          organizationId: args.orgId,
+          fileBytes: bytes.byteLength,
+        });
+      }
+
       // Extract text content
       const text = await extractTextContent(ctx, {
         storageId: args.storageId,
         filename: args.filename,
         bytes,
         mimeType: args.mimeType,
+        organizationId: args.orgId,
       });
 
       console.log(`[processFile] Extracted ${text.length} characters from "${args.displayName}"`);
@@ -59,6 +68,24 @@ export const processFile = internalAction({
 
         const chunkBytes = new TextEncoder().encode(chunk);
         const chunkHash = await contentHashFromArrayBuffer(chunkBytes.buffer);
+
+        // Estimated vector write: one embedding vector per chunk.
+        // text-embedding-3-small dimension is 1536 floats => 1536 * 4 bytes.
+        await ctx.runMutation((internal as any).system.convexUsageEstimated.record, {
+          organizationId: args.orgId,
+          vectorBytes: 1536 * 4,
+        });
+
+        const estimatedEmbeddingTokens = Math.ceil(chunk.length / 4);
+        if (estimatedEmbeddingTokens > 0) {
+          await ctx.runMutation((internal as any).system.tokenUsage.record, {
+            organizationId: args.orgId,
+            provider: "openai",
+            model: "text-embedding-3-small",
+            kind: "rag_add_embedding",
+            totalTokens: estimatedEmbeddingTokens,
+          });
+        }
 
         // Call rag.add directly from action context (not mutation)
         await rag.add(ctx, {
@@ -140,20 +167,188 @@ export const processFile = internalAction({
     } catch (error) {
       console.error(`[processFile] Error processing "${args.displayName}":`, error);
 
-      // Mark the entry as error
-      await ctx.runMutation(internal.system.fileProcessor.markAsError, {
-        entryId: args.entryId,
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+      let errorEntryId = args.entryId;
+      try {
+        errorEntryId = await ctx.runMutation(internal.system.fileProcessor.markAsError, {
+          entryId: args.entryId,
+          namespace: args.namespace,
+          storageId: args.storageId,
+          uploadedBy: args.orgId,
+          displayName: args.displayName,
+          originalFilename: args.filename,
+          category: args.category,
+          knowledgeBaseId: args.knowledgeBaseId,
+          sourceType: args.sourceType,
+          error: errorMessage,
+        });
+      } catch (markError) {
+        console.error(`[processFile] Failed to mark entry as error:`, markError);
+      }
+
+      try {
+        const oldNotifications = await ctx.runQuery(internal.private.notifications.listByFileName, {
+          organizationId: args.orgId,
+          fileName: args.displayName,
+        });
+
+        for (const notif of oldNotifications) {
+          await ctx.runMutation(internal.private.notifications.deleteById, {
+            notificationId: notif._id,
+          });
+        }
+      } catch (notifCleanupErr) {
+        console.error(`[processFile] Failed to delete old notifications:`, notifCleanupErr);
+      }
 
       // Create failure notification
       await ctx.runMutation(internal.private.notifications.create, {
         organizationId: args.orgId,
         type: "file_failed",
         title: "File processing failed",
-        message: `Failed to process "${args.displayName}": ${error instanceof Error ? error.message : "Unknown error"}`,
-        fileId: args.entryId,
+        message: `Failed to process "${args.displayName}": ${errorMessage}`,
+        fileId: errorEntryId,
         fileName: args.displayName,
+      });
+
+      try {
+        await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
+          organizationId: args.orgId,
+          knowledgeBaseId: args.knowledgeBaseId ?? undefined,
+        });
+      } catch (trackErr) {
+        console.error(`[processFile] Failed to track file change after failure:`, trackErr);
+      }
+    }
+  },
+});
+
+export const finalizeFileProcessingNotification = internalAction({
+  args: {
+    orgId: v.string(),
+    entryId: v.string(),
+    displayName: v.string(),
+    storageId: v.id("_storage"),
+    namespace: v.string(),
+    knowledgeBaseId: v.union(v.string(), v.null()),
+    cursor: v.optional(v.string()),
+    pass: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const pass = typeof args.pass === "number" ? args.pass : 0;
+
+    let existingNotifs: any[] = [];
+    try {
+      existingNotifs = await ctx.runQuery(internal.private.notifications.listByFileName, {
+        organizationId: args.orgId,
+        fileName: args.displayName,
+      });
+    } catch (error) {
+      console.error(`[finalizeFileProcessingNotification] Failed to load notifications:`, error);
+    }
+
+    if (existingNotifs.some((n) => n.type === "file_ready" || n.type === "file_failed")) {
+      return;
+    }
+
+    const namespace = await rag.getNamespace(ctx, { namespace: args.namespace });
+    if (!namespace) {
+      return;
+    }
+
+    let foundReady = false;
+    let foundError = false;
+    let foundErrorMessage: string | null = null;
+
+    let cursor: string | null = args.cursor ?? null;
+    const BATCH_SIZE = 200;
+    const MAX_BATCHES_PER_RUN = 10;
+    for (let i = 0; i < MAX_BATCHES_PER_RUN; i++) {
+      const res = await rag.list(ctx, {
+        namespaceId: namespace.namespaceId,
+        paginationOpts: { numItems: BATCH_SIZE, cursor },
+      });
+
+      for (const entry of res.page) {
+        const m = entry.metadata as any;
+        if (m?.storageId !== args.storageId) continue;
+
+        const status = m?.processingStatus;
+        if (status === "error") {
+          foundError = true;
+          foundErrorMessage = typeof m?.error === "string" ? m.error : null;
+          break;
+        }
+
+        if (status === "ready") {
+          foundReady = true;
+        }
+      }
+
+      if (foundError) break;
+
+      if (res.isDone || !res.continueCursor) {
+        cursor = null;
+        break;
+      }
+      cursor = res.continueCursor;
+    }
+
+    if (foundError || foundReady) {
+      try {
+        for (const notif of existingNotifs) {
+          await ctx.runMutation(internal.private.notifications.deleteById, {
+            notificationId: notif._id,
+          });
+        }
+      } catch (error) {
+        console.error(`[finalizeFileProcessingNotification] Failed to delete old notifications:`, error);
+      }
+
+      if (foundError) {
+        await ctx.runMutation(internal.private.notifications.create, {
+          organizationId: args.orgId,
+          type: "file_failed",
+          title: "File processing failed",
+          message: `Failed to process "${args.displayName}": ${foundErrorMessage ?? "Unknown error"}`,
+          fileId: args.entryId,
+          fileName: args.displayName,
+        });
+      } else {
+        await ctx.runMutation(internal.private.notifications.create, {
+          organizationId: args.orgId,
+          type: "file_ready",
+          title: "✓ File ready",
+          message: `"${args.displayName}" is ready to use`,
+          fileId: args.entryId,
+          fileName: args.displayName,
+        });
+      }
+
+      try {
+        await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
+          organizationId: args.orgId,
+          knowledgeBaseId: args.knowledgeBaseId ?? undefined,
+        });
+      } catch (error) {
+        console.error(`[finalizeFileProcessingNotification] Failed to track file change:`, error);
+      }
+
+      return;
+    }
+
+    const MAX_PASSES = 20;
+    if (pass < MAX_PASSES) {
+      await ctx.scheduler.runAfter(30_000, internal.system.fileProcessor.finalizeFileProcessingNotification, {
+        orgId: args.orgId,
+        entryId: args.entryId,
+        displayName: args.displayName,
+        storageId: args.storageId,
+        namespace: args.namespace,
+        knowledgeBaseId: args.knowledgeBaseId,
+        cursor: cursor ?? undefined,
+        pass: pass + 1,
       });
     }
   },
@@ -392,12 +587,47 @@ export const deletePlaceholder = internalMutation({
 export const markAsError = internalMutation({
   args: {
     entryId: v.string(),
+    namespace: v.string(),
+    storageId: v.id("_storage"),
+    uploadedBy: v.string(),
+    displayName: v.string(),
+    originalFilename: v.string(),
+    category: v.union(v.string(), v.null()),
+    knowledgeBaseId: v.union(v.string(), v.null()),
+    sourceType: v.union(v.literal("uploaded"), v.literal("scraped")),
     error: v.string(),
   },
   handler: async (ctx, args) => {
     console.error(`[markAsError] Entry ${args.entryId} failed: ${args.error}`);
-    // The placeholder entry will remain with empty text, showing as "error" status
-    // The file list query will detect this and show it as failed
+
+    try {
+      await rag.deleteAsync(ctx, { entryId: args.entryId as EntryId });
+    } catch (error) {
+      console.error("[markAsError] Failed to delete placeholder:", error);
+    }
+
+    const errorEntry = await rag.add(ctx, {
+      namespace: args.namespace,
+      text: "",
+      key: args.displayName,
+      title: args.displayName,
+      filterValues: [{ name: "storageId", value: args.storageId }],
+      metadata: {
+        storageId: args.storageId,
+        uploadedBy: args.uploadedBy,
+        displayName: args.displayName,
+        originalFilename: args.originalFilename,
+        category: args.category,
+        knowledgeBaseId: args.knowledgeBaseId,
+        sourceType: args.sourceType,
+        chunkIndex: 0,
+        totalChunks: 1,
+        processingStatus: "error",
+        error: args.error,
+      },
+    });
+
+    return errorEntry.entryId;
   },
 });
 

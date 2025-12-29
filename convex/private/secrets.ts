@@ -4,7 +4,7 @@ import { internal } from "../_generated/api";
 
 export const upsert = action({
   args: {
-    service: v.union(v.literal("vapi")),
+    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
     value: v.any(),
     // ✅ orgId from client
     organizationId: v.string(),

@@ -3,6 +3,7 @@ import { generateText } from "ai";
 import type { StorageActionWriter } from "convex/server";
 import { assert } from "convex-helpers";
 import { Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 
 const AI_MODELS = {
   image: openai.chat("gpt-4o-mini") as any,
@@ -28,11 +29,12 @@ export type ExtractTextContentArgs = {
   filename: string;
   bytes?: ArrayBuffer;
   mimeType: string;
+  organizationId?: string;
 };
 
 
 export async function extractTextContent(
-  ctx: { storage: StorageActionWriter },
+  ctx: { storage: StorageActionWriter; runMutation?: any },
   args: ExtractTextContentArgs,
 ): Promise<string> {
   const { storageId, filename, bytes, mimeType } = args;
@@ -41,13 +43,13 @@ export async function extractTextContent(
     assert(url, "Failed to get storage URL");
 
     if (SUPPORTED_IMAGE_TYPES.some((type) => type === mimeType)) {
-        return extractImageText(url);
+        return extractImageText(url, args.organizationId, ctx);
     }
     if (mimeType.toLowerCase().includes("pdf")) {
-        return extractPdfText(url, mimeType, filename);
+        return extractPdfText(url, mimeType, filename, args.organizationId, ctx);
         }
     if (mimeType.toLowerCase().includes("text")) {
-    return extractTextFileContent(ctx, storageId, bytes, mimeType);
+    return extractTextFileContent(ctx, storageId, bytes, mimeType, args.organizationId);
     }
 
     throw new Error(`Unsupported MIME type: ${mimeType}`);
@@ -58,10 +60,11 @@ export async function extractTextContent(
     };
 
     async function extractTextFileContent(
-  ctx: { storage: StorageActionWriter },
+  ctx: { storage: StorageActionWriter; runMutation?: any },
   storageId: Id<"_storage">,
   bytes: ArrayBuffer | undefined,
-  mimeType: string
+  mimeType: string,
+  organizationId: string | undefined
 ): Promise<string> {
   const arrayBuffer =
     bytes || (await (await ctx.storage.get(storageId))?.arrayBuffer());
@@ -89,6 +92,26 @@ export async function extractTextContent(
   ]
 });
 
+  const usage = (result as any)?.usage;
+  const totalTokens =
+    typeof usage?.totalTokens === "number"
+      ? usage.totalTokens
+      : Math.ceil(String(result?.text ?? "").length / 4);
+
+  if (organizationId && ctx.runMutation && totalTokens > 0) {
+    await ctx.runMutation((internal as any).system.tokenUsage.record, {
+      organizationId,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      kind: "extract_text_html",
+      promptTokens:
+        typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+      completionTokens:
+        typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
+      totalTokens,
+    });
+  }
+
   return result.text;
  }
  return text;
@@ -101,22 +124,79 @@ async function extractPdfText(
   url: string,
   mimeType: string,
   filename: string,
+  organizationId: string | undefined,
+  ctx: { storage: StorageActionWriter; runMutation?: any },
 ): Promise<string> {
   const apiKey = process.env.LLAMAPARSE_API_KEY;
   
   // Check if LlamaParse is configured
   if (!apiKey) {
     console.warn(`[extractPdfText] LLAMAPARSE_API_KEY not configured, using GPT-4o-mini fallback for ${filename}`);
-    return extractPdfFallback(url, mimeType, filename);
+    return extractPdfFallback(url, mimeType, filename, organizationId, ctx);
   }
   
   try {
     // Try LlamaParse first (supports large files up to 1GB)
     console.log(`[extractPdfText] Using LlamaParse for ${filename}`);
-    return await useLlamaParse(url, filename, apiKey);
+    const llamaResult = await useLlamaParse(url, filename, apiKey);
+
+    const jobPagesRaw = llamaResult.jobMetadata?.job_pages;
+    const cacheHitRaw = llamaResult.jobMetadata?.job_is_cache_hit;
+
+    const jobPages = typeof jobPagesRaw === "number" ? jobPagesRaw : null;
+    const cacheHit = typeof cacheHitRaw === "boolean" ? cacheHitRaw : null;
+
+    const totalUnits =
+      jobPages !== null
+        ? cacheHit === true
+          ? 0
+          : jobPages
+        : Math.ceil(llamaResult.text.length / 4);
+
+    const kind =
+      jobPages !== null
+        ? "pdf_parse_pages"
+        : "pdf_parse_text_length_fallback";
+
+    if (organizationId && ctx.runMutation && totalUnits > 0) {
+      await ctx.runMutation((internal as any).system.tokenUsage.record, {
+        organizationId,
+        provider: "llamaparse",
+        model: "llamaparse",
+        kind,
+        totalTokens: totalUnits,
+      });
+    }
+
+    return llamaResult.text;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[extractPdfText] LlamaParse failed for ${filename}:`, errorMessage);
+
+    const lower = errorMessage.toLowerCase();
+    const statusMatch = errorMessage.match(/\b(401|402|403|429)\b/);
+    const status = statusMatch ? Number(statusMatch[1]) : null;
+
+    const isOutOfCredits =
+      status === 402 ||
+      lower.includes("out of credits") ||
+      lower.includes("insufficient credits") ||
+      lower.includes("payment required") ||
+      lower.includes("credits exhausted") ||
+      lower.includes("no credits");
+
+    const isInvalidKey =
+      status === 401 ||
+      status === 403 ||
+      lower.includes("unauthorized") ||
+      lower.includes("invalid api key") ||
+      lower.includes("invalid token") ||
+      lower.includes("forbidden");
+
+    const isRateLimited =
+      status === 429 ||
+      lower.includes("rate limit") ||
+      lower.includes("too many requests");
     
     // Check if error is related to token limits (document too complex for LlamaParse)
     const isTokenLimitError = errorMessage.includes('token size') || 
@@ -128,11 +208,29 @@ async function extractPdfText(
       console.warn(`[extractPdfText] Using basic text extraction for ${filename}`);
       return extractPdfBasic(url, filename);
     }
+
+    if (isOutOfCredits) {
+      throw new Error(
+        "LlamaParse is out of credits. Update your LLAMAPARSE_API_KEY and retry processing.",
+      );
+    }
+
+    if (isInvalidKey) {
+      throw new Error(
+        "LlamaParse API key is invalid. Update LLAMAPARSE_API_KEY and retry processing.",
+      );
+    }
+
+    if (isRateLimited) {
+      throw new Error(
+        "LlamaParse is rate-limiting requests. Please wait a bit and retry processing.",
+      );
+    }
     
     // For other errors, try GPT-4o-mini fallback
     console.log(`[extractPdfText] Falling back to GPT-4o-mini for ${filename}`);
     try {
-      return await extractPdfFallback(url, mimeType, filename);
+      return await extractPdfFallback(url, mimeType, filename, organizationId, ctx);
     } catch (fallbackError) {
       // Last resort: basic extraction
       console.error(`[extractPdfText] GPT-4o-mini fallback also failed:`, fallbackError);
@@ -152,7 +250,7 @@ async function useLlamaParse(
   url: string,
   filename: string,
   apiKey: string,
-): Promise<string> {
+): Promise<{ text: string; jobMetadata?: { job_pages?: number; job_is_cache_hit?: boolean } }> {
   const baseUrl = process.env.LLAMAPARSE_BASE_URL || 'https://api.cloud.llamaindex.ai';
 
   // Step 1: Fetch PDF from Convex storage and upload to LlamaParse
@@ -252,6 +350,7 @@ async function useLlamaParse(
   // Step 2: Poll for job completion
   let attempts = 0;
   const maxAttempts = 120; // 4 minutes timeout (120 × 2s)
+  let finalStatusData: any = null;
 
   console.log(`[LlamaParse] Starting status polling for job ${jobId}...`);
 
@@ -280,6 +379,7 @@ async function useLlamaParse(
 
     if (statusData.status === 'SUCCESS' || statusData.status === 'COMPLETED') {
       console.log(`[LlamaParse] ✓ Job completed successfully in ${attempts * 2} seconds`);
+      finalStatusData = statusData;
       break;
     } else if (statusData.status === 'ERROR' || statusData.status === 'FAILED') {
       const errorCode = statusData.error_code || statusData.errorCode || 'UNKNOWN_ERROR';
@@ -308,6 +408,32 @@ async function useLlamaParse(
   // Step 3: Fetch the parsed markdown result
   console.log(`[LlamaParse] Step 3: Fetching result for job ${jobId}`);
   console.log(`[LlamaParse] Result URL: ${baseUrl}/api/v1/parsing/job/${jobId}/result/markdown`);
+
+  // Also fetch structured JSON result to get official metadata (page count, cache hit).
+  // Docs: /api/v1/parsing/job/<job_id>/result/json returns { pages: [...], job_metadata: { job_pages, job_is_cache_hit } }
+  let jobMetadata: { job_pages?: number; job_is_cache_hit?: boolean } | undefined = undefined;
+  try {
+    const jsonMetaRes = await fetch(`${baseUrl}/api/v1/parsing/job/${jobId}/result/json`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+    });
+
+    if (jsonMetaRes.ok) {
+      const jsonMeta = await jsonMetaRes.json();
+      const jm = (jsonMeta as any)?.job_metadata;
+      if (jm && typeof jm === "object") {
+        jobMetadata = {
+          job_pages: typeof jm.job_pages === "number" ? jm.job_pages : undefined,
+          job_is_cache_hit:
+            typeof jm.job_is_cache_hit === "boolean" ? jm.job_is_cache_hit : undefined,
+        };
+      }
+    } else {
+      const errText = await jsonMetaRes.text();
+      console.warn(`[LlamaParse] Metadata JSON fetch failed: ${jsonMetaRes.status} ${errText}`);
+    }
+  } catch (e) {
+    console.warn(`[LlamaParse] Metadata JSON fetch error:`, e);
+  }
 
   const resultResponse = await fetch(
     `${baseUrl}/api/v1/parsing/job/${jobId}/result/markdown`,
@@ -350,7 +476,19 @@ async function useLlamaParse(
 
   console.log(`[LlamaParse] ✓ Success! Extracted ${text.length} characters from ${filename}`);
   console.log(`[LlamaParse] Text preview: ${text.substring(0, 150)}...`);
-  return text;
+  if (!jobMetadata && finalStatusData && typeof finalStatusData === "object") {
+    // Best-effort fallback: sometimes the job status payload contains metadata.
+    const jm = (finalStatusData as any).job_metadata ?? (finalStatusData as any).jobMetadata;
+    if (jm && typeof jm === "object") {
+      jobMetadata = {
+        job_pages: typeof jm.job_pages === "number" ? jm.job_pages : undefined,
+        job_is_cache_hit:
+          typeof jm.job_is_cache_hit === "boolean" ? jm.job_is_cache_hit : undefined,
+      };
+    }
+  }
+
+  return { text, jobMetadata };
 }
 
 /**
@@ -439,6 +577,8 @@ async function extractPdfFallback(
   url: string,
   mimeType: string,
   filename: string,
+  organizationId: string | undefined,
+  ctx: { storage: StorageActionWriter; runMutation?: any },
 ): Promise<string> {
   console.log(`[extractPdfFallback] ========================================`);
   console.log(`[extractPdfFallback] Starting GPT-4o-mini extraction for ${filename}`);
@@ -472,6 +612,28 @@ async function extractPdfFallback(
           }
         ] as any,
       });
+
+      const usage = (result as any)?.usage;
+      const totalTokens =
+        typeof usage?.totalTokens === "number"
+          ? usage.totalTokens
+          : Math.ceil(String(result?.text ?? "").length / 4);
+
+      if (organizationId && ctx.runMutation && totalTokens > 0) {
+        await ctx.runMutation((internal as any).system.tokenUsage.record, {
+          organizationId,
+          provider: "openai",
+          model: "gpt-4o-mini",
+          kind: "extract_pdf_fallback",
+          promptTokens:
+            typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+          completionTokens:
+            typeof usage?.completionTokens === "number"
+              ? usage.completionTokens
+              : undefined,
+          totalTokens,
+        });
+      }
 
       const duration = Date.now() - startTime;
 
@@ -518,18 +680,41 @@ async function extractPdfFallback(
 
 
 
-    async function extractImageText(url: string): Promise<string> {
+async function extractImageText(
+  url: string,
+  organizationId: string | undefined,
+  ctx: { storage: StorageActionWriter; runMutation?: any },
+): Promise<string> {
   const result = await generateText({
     model: AI_MODELS.image,
     system: SYSTEM_PROMPTS.image,
     messages: [
-    {
+      {
         role: "user",
-        content: [{ type: "image", image: new URL(url) }]
-    },
+        content: [{ type: "image", image: new URL(url) }],
+      },
     ],
-
   });
+
+  const usage = (result as any)?.usage;
+  const totalTokens =
+    typeof usage?.totalTokens === "number"
+      ? usage.totalTokens
+      : Math.ceil(String(result?.text ?? "").length / 4);
+
+  if (organizationId && ctx.runMutation && totalTokens > 0) {
+    await ctx.runMutation((internal as any).system.tokenUsage.record, {
+      organizationId,
+      provider: "openai",
+      model: "gpt-4o-mini",
+      kind: "extract_image_text",
+      promptTokens:
+        typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+      completionTokens:
+        typeof usage?.completionTokens === "number" ? usage.completionTokens : undefined,
+      totalTokens,
+    });
+  }
 
   return result.text;
 }

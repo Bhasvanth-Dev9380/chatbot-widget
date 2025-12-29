@@ -9,6 +9,7 @@
  */
 
 import type * as constants from "../constants.js";
+import type * as http from "../http.js";
 import type * as lib_extractTextContent from "../lib/extractTextContent.js";
 import type * as lib_generateCaseId from "../lib/generateCaseId.js";
 import type * as lib_secrets from "../lib/secrets.js";
@@ -18,9 +19,11 @@ import type * as migrations_addIsActiveField from "../migrations/addIsActiveFiel
 import type * as migrations_cleanupKnowledgeBaseNamespace from "../migrations/cleanupKnowledgeBaseNamespace.js";
 import type * as migrations_fixKnowledgeBases from "../migrations/fixKnowledgeBases.js";
 import type * as private_analytics from "../private/analytics.js";
+import type * as private_beyondPresence from "../private/beyondPresence.js";
 import type * as private_chatbots from "../private/chatbots.js";
 import type * as private_contactSessions from "../private/contactSessions.js";
 import type * as private_conversations from "../private/conversations.js";
+import type * as private_convexUsageEstimated from "../private/convexUsageEstimated.js";
 import type * as private_files from "../private/files.js";
 import type * as private_knowledgeBases from "../private/knowledgeBases.js";
 import type * as private_messages from "../private/messages.js";
@@ -28,6 +31,7 @@ import type * as private_notifications from "../private/notifications.js";
 import type * as private_plugins from "../private/plugins.js";
 import type * as private_scraper from "../private/scraper.js";
 import type * as private_secrets from "../private/secrets.js";
+import type * as private_tokenUsage from "../private/tokenUsage.js";
 import type * as private_vapi from "../private/vapi.js";
 import type * as private_voiceTranscripts from "../private/voiceTranscripts.js";
 import type * as private_widgetSettings from "../private/widgetSettings.js";
@@ -45,14 +49,17 @@ import type * as system_ai_rag from "../system/ai/rag.js";
 import type * as system_ai_tools_escalateConversation from "../system/ai/tools/escalateConversation.js";
 import type * as system_ai_tools_resolveConversation from "../system/ai/tools/resolveConversation.js";
 import type * as system_ai_tools_search from "../system/ai/tools/search.js";
+import type * as system_beyondPresenceCallLinks from "../system/beyondPresenceCallLinks.js";
 import type * as system_chatbots from "../system/chatbots.js";
 import type * as system_contactSessions from "../system/contactSessions.js";
 import type * as system_conversations from "../system/conversations.js";
+import type * as system_convexUsageEstimated from "../system/convexUsageEstimated.js";
 import type * as system_deletedFiles from "../system/deletedFiles.js";
 import type * as system_fileProcessor from "../system/fileProcessor.js";
 import type * as system_knowledgeBases from "../system/knowledgeBases.js";
 import type * as system_plugin from "../system/plugin.js";
 import type * as system_secrets from "../system/secrets.js";
+import type * as system_tokenUsage from "../system/tokenUsage.js";
 import type * as system_widgetSettings from "../system/widgetSettings.js";
 import type * as users from "../users.js";
 
@@ -64,6 +71,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   constants: typeof constants;
+  http: typeof http;
   "lib/extractTextContent": typeof lib_extractTextContent;
   "lib/generateCaseId": typeof lib_generateCaseId;
   "lib/secrets": typeof lib_secrets;
@@ -73,9 +81,11 @@ declare const fullApi: ApiFromModules<{
   "migrations/cleanupKnowledgeBaseNamespace": typeof migrations_cleanupKnowledgeBaseNamespace;
   "migrations/fixKnowledgeBases": typeof migrations_fixKnowledgeBases;
   "private/analytics": typeof private_analytics;
+  "private/beyondPresence": typeof private_beyondPresence;
   "private/chatbots": typeof private_chatbots;
   "private/contactSessions": typeof private_contactSessions;
   "private/conversations": typeof private_conversations;
+  "private/convexUsageEstimated": typeof private_convexUsageEstimated;
   "private/files": typeof private_files;
   "private/knowledgeBases": typeof private_knowledgeBases;
   "private/messages": typeof private_messages;
@@ -83,6 +93,7 @@ declare const fullApi: ApiFromModules<{
   "private/plugins": typeof private_plugins;
   "private/scraper": typeof private_scraper;
   "private/secrets": typeof private_secrets;
+  "private/tokenUsage": typeof private_tokenUsage;
   "private/vapi": typeof private_vapi;
   "private/voiceTranscripts": typeof private_voiceTranscripts;
   "private/widgetSettings": typeof private_widgetSettings;
@@ -100,14 +111,17 @@ declare const fullApi: ApiFromModules<{
   "system/ai/tools/escalateConversation": typeof system_ai_tools_escalateConversation;
   "system/ai/tools/resolveConversation": typeof system_ai_tools_resolveConversation;
   "system/ai/tools/search": typeof system_ai_tools_search;
+  "system/beyondPresenceCallLinks": typeof system_beyondPresenceCallLinks;
   "system/chatbots": typeof system_chatbots;
   "system/contactSessions": typeof system_contactSessions;
   "system/conversations": typeof system_conversations;
+  "system/convexUsageEstimated": typeof system_convexUsageEstimated;
   "system/deletedFiles": typeof system_deletedFiles;
   "system/fileProcessor": typeof system_fileProcessor;
   "system/knowledgeBases": typeof system_knowledgeBases;
   "system/plugin": typeof system_plugin;
   "system/secrets": typeof system_secrets;
+  "system/tokenUsage": typeof system_tokenUsage;
   "system/widgetSettings": typeof system_widgetSettings;
   users: typeof users;
 }>;

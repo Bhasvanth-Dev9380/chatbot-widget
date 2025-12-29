@@ -62,6 +62,17 @@ export const search: any = createTool({
       return "I don't have info on that. Want me to connect you with our team?";
     }
 
+    const estimatedEmbeddingTokens = Math.ceil(query.length / 4);
+    if (estimatedEmbeddingTokens > 0) {
+      await ctx.runMutation((internal as any).system.tokenUsage.record, {
+        organizationId: orgId,
+        provider: "openai",
+        model: "text-embedding-3-small",
+        kind: "rag_search_query_embedding",
+        totalTokens: estimatedEmbeddingTokens,
+      });
+    }
+
     const STOPWORDS = new Set([
       "a",
       "an",
@@ -122,6 +133,13 @@ export const search: any = createTool({
         query,
         limit: 20,
         vectorScoreThreshold,
+      });
+
+      // Estimated vector read usage: rough approximation.
+      // We assume up to `limit` embedding vectors are accessed.
+      await ctx.runMutation((internal as any).system.convexUsageEstimated.record, {
+        organizationId: orgId,
+        vectorBytes: 20 * 1536 * 4,
       });
 
       const entries: any[] | undefined = (res as any).entries;
@@ -200,6 +218,28 @@ If the answer genuinely isn't in the search results, say: "I don't have info on 
       ],
       model: openai("gpt-4o-mini") as any,
     });
+
+    const usage = (response as any)?.usage;
+    const totalTokens =
+      typeof usage?.totalTokens === "number"
+        ? usage.totalTokens
+        : Math.ceil(String(response?.text ?? "").length / 4);
+
+    if (totalTokens > 0) {
+      await ctx.runMutation((internal as any).system.tokenUsage.record, {
+        organizationId: orgId,
+        provider: "openai",
+        model: "gpt-4o-mini",
+        kind: "kb_search_interpreter",
+        promptTokens:
+          typeof usage?.promptTokens === "number" ? usage.promptTokens : undefined,
+        completionTokens:
+          typeof usage?.completionTokens === "number"
+            ? usage.completionTokens
+            : undefined,
+        totalTokens,
+      });
+    }
 
     // DO NOT call saveMessage here - agent handles saving in v0.3.2
     // Just return the result

@@ -54,6 +54,8 @@ export default defineSchema({
     chatbotId: v.optional(v.string()),
     appearance: v.optional(appearanceSchema),
     customSystemPrompt: v.optional(v.string()),
+    aiAvatarEnabled: v.optional(v.boolean()),
+    beyondPresenceAgentId: v.optional(v.string()),
     vapiSettings: v.optional(
       v.object({
         assistantId: v.optional(v.string()),
@@ -67,7 +69,8 @@ export default defineSchema({
     .index("by_organization_id", ["organizationId"])
     .index("by_organization_and_active", ["organizationId", "isActive"])
     .index("by_knowledge_base_id", ["knowledgeBaseId"])
-    .index("by_chatbot_id", ["chatbotId"]),
+    .index("by_chatbot_id", ["chatbotId"])
+    .index("by_beyond_presence_agent_id", ["beyondPresenceAgentId"]),
 
   /* ───────── KNOWLEDGE BASES ───────── */
   knowledgeBases: defineTable({
@@ -110,7 +113,7 @@ export default defineSchema({
   /* ───────── PLUGINS ───────── */
   plugins: defineTable({
     organizationId: v.string(),
-    service: v.union(v.literal("vapi")),
+    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
     secretName: v.string(),
   })
     .index("by_organization_id", ["organizationId"])
@@ -225,4 +228,50 @@ export default defineSchema({
     .index("by_conversation_id", ["conversationId"])
     .index("by_contact_session_id", ["contactSessionId"])
     .index("by_chatbot_id", ["chatbotId"]),
+
+  beyondPresenceCallLinks: defineTable({
+    callId: v.string(),
+    conversationId: v.id("conversations"),
+    threadId: v.string(),
+    lastProcessedSentAt: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_call_id", ["callId"])
+    .index("by_conversation_id", ["conversationId"]),
+
+  tokenUsageEvents: defineTable({
+    organizationId: v.string(),
+    provider: v.string(),
+    model: v.optional(v.string()),
+    kind: v.optional(v.string()),
+    promptTokens: v.optional(v.number()),
+    completionTokens: v.optional(v.number()),
+    totalTokens: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_organization_id", ["organizationId"])
+    .index("by_org_and_created_at", ["organizationId", "createdAt"]),
+
+  tokenUsageDaily: defineTable({
+    organizationId: v.string(),
+    dayStart: v.number(),
+    provider: v.string(),
+    totalTokens: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization_id", ["organizationId"])
+    .index("by_org_and_day", ["organizationId", "dayStart"])
+    .index("by_org_day_provider", ["organizationId", "dayStart", "provider"]),
+
+  convexUsageEstimatedDaily: defineTable({
+    organizationId: v.string(),
+    dayStart: v.number(),
+    databaseBytes: v.number(),
+    vectorBytes: v.number(),
+    fileBytes: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_organization_id", ["organizationId"])
+    .index("by_org_and_day", ["organizationId", "dayStart"]),
 });

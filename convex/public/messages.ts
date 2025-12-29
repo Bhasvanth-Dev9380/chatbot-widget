@@ -156,6 +156,32 @@ export const create = action({
           { threadId: args.threadId },
           { prompt: args.prompt }
         );
+
+        {
+          const usage = (result as any)?.usage;
+          const totalTokens =
+            typeof usage?.totalTokens === "number"
+              ? usage.totalTokens
+              : Math.ceil(String(args.prompt ?? "").length / 4);
+
+          if (totalTokens > 0) {
+            await ctx.runMutation((internal as any).system.tokenUsage.record, {
+              organizationId: conversation.organizationId,
+              provider: "openai",
+              model: "gpt-4o-mini",
+              kind: "agent_generate",
+              promptTokens:
+                typeof usage?.promptTokens === "number"
+                  ? usage.promptTokens
+                  : undefined,
+              completionTokens:
+                typeof usage?.completionTokens === "number"
+                  ? usage.completionTokens
+                  : undefined,
+              totalTokens,
+            });
+          }
+        }
         console.log("✅ Custom agent completed. Result:", JSON.stringify(result, null, 2));
 
         // Check if agent ended with tool calls instead of text
@@ -185,6 +211,32 @@ export const create = action({
           { threadId: args.threadId },
           { prompt: args.prompt }
         );
+
+        {
+          const usage = (result as any)?.usage;
+          const totalTokens =
+            typeof usage?.totalTokens === "number"
+              ? usage.totalTokens
+              : Math.ceil(String(args.prompt ?? "").length / 4);
+
+          if (totalTokens > 0) {
+            await ctx.runMutation((internal as any).system.tokenUsage.record, {
+              organizationId: conversation.organizationId,
+              provider: "openai",
+              model: "gpt-4o-mini",
+              kind: "agent_generate",
+              promptTokens:
+                typeof usage?.promptTokens === "number"
+                  ? usage.promptTokens
+                  : undefined,
+              completionTokens:
+                typeof usage?.completionTokens === "number"
+                  ? usage.completionTokens
+                  : undefined,
+              totalTokens,
+            });
+          }
+        }
         console.log("✅ Support agent completed. Result:", JSON.stringify(result, null, 2));
 
         // Check if agent ended with tool calls instead of text

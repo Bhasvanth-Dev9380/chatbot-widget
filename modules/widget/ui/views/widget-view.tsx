@@ -10,6 +10,8 @@ import { WidgetChatScreen } from "../screens/widget-chat-screen";
 import { WidgetInboxScreen } from "../screens/widget-inbox-screen";
 import { WidgetVoiceScreen } from "../screens/widget-voice-screen";
 import { WidgetContactScreen } from "../screens/widget-contact-screen";
+import { WidgetAvatarScreen } from "../screens/widget-avatar-screen";
+import { PoweredByFooter } from "../components/powered-by-footer";
 
 
 interface Props {
@@ -37,6 +39,7 @@ export const WidgetView = ({ organizationId, chatbotId }: Props) => {
     loading: <WidgetLoadingScreen organizationId={organizationId} chatbotId={chatbotId} />,
     auth: <WidgetAuthScreen />,
       voice: <WidgetVoiceScreen />,
+      avatar: <WidgetAvatarScreen />,
      inbox: <WidgetInboxScreen />,
     selection: <WidgetSelectionScreen />,
     chat: <WidgetChatScreen />,
@@ -48,7 +51,7 @@ export const WidgetView = ({ organizationId, chatbotId }: Props) => {
   return (
     <main className="flex h-full w-full flex-col overflow-hidden rounded-xl border bg-muted"> 
       {screenComponents[screen]}
-      {/* <WidgetFooter /> */}
+      <PoweredByFooter />
     </main>
   );
 };

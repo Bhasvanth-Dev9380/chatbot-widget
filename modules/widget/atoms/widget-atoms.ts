@@ -26,6 +26,8 @@ export type WidgetSettings = {
   chatbotName: string;
   greetMessage: string;
   customSystemPrompt?: string;
+  aiAvatarEnabled?: boolean;
+  beyondPresenceAgentId?: string;
   appearance?: WidgetAppearance;
   defaultSuggestions: {
     suggestion1?: string;
@@ -57,3 +59,8 @@ export const vapiSecretsAtom = atom<{
   publicApiKey: string;
 } | null>(null);
 export const hasVapiSecretsAtom = atom((get) => get(vapiSecretsAtom) !== null);
+
+export const beyondPresenceConfigAtom = atom<{
+  avatarId: string;
+  baseUrl: string;
+} | null>(null);
