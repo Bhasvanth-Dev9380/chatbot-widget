@@ -34,6 +34,48 @@ export const findLatestUnlinkedConversationForChatbot = internalQuery({
   },
 });
 
+export const findLatestUnlinkedConversationForChatbots = internalQuery({
+  args: {
+    organizationId: v.string(),
+    chatbotIds: v.array(v.id("chatbots")),
+    createdAfter: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const chatbotIdSet = new Set(args.chatbotIds.map((id) => String(id)));
+    if (chatbotIdSet.size === 0) return null;
+
+    const candidates = await ctx.db
+      .query("conversations")
+      .withIndex("by_organization_id", (q) =>
+        q.eq("organizationId", args.organizationId),
+      )
+      .order("desc")
+      .take(50);
+
+    for (const c of candidates) {
+      if (c._creationTime < args.createdAfter) {
+        continue;
+      }
+
+      if (!c.chatbotId) continue;
+      if (!chatbotIdSet.has(String(c.chatbotId))) continue;
+      if (c.kind !== "video") continue;
+      if (c.isTranscriptPending !== true) continue;
+
+      const existing = await ctx.db
+        .query("beyondPresenceCallLinks")
+        .withIndex("by_conversation_id", (q) => q.eq("conversationId", c._id))
+        .unique();
+
+      if (!existing) {
+        return { conversationId: c._id, threadId: c.threadId };
+      }
+    }
+
+    return null;
+  },
+});
+
 export const getByCallId = internalQuery({
   args: {
     callId: v.string(),
@@ -112,6 +154,8 @@ export const createConversationAndLink = internalMutation({
       threadId: args.threadId,
       caseId: generateCaseId(),
       chatbotId: args.chatbotId,
+      kind: "video",
+      isTranscriptPending: true,
     });
 
     await ctx.db.insert("beyondPresenceCallLinks", {

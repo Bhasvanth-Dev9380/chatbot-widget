@@ -30,7 +30,7 @@ export const AIMessageContent = ({
       "break-words",
       "flex flex-col gap-2 rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
       "bg-muted text-foreground",
-      "group-[.is-user]:bg-primary group-[.is-user]:text-primary-foreground",
+      "group-[.is-user]:[background:var(--primary-bg)] group-[.is-user]:text-primary-foreground",
       "shadow-sm",
       className
     )}

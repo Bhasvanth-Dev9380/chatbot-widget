@@ -52,9 +52,13 @@ export const getMany = query({
     const conversations = await (chatbotDocId
       ? baseQuery
           .filter((q) => q.eq(q.field("chatbotId"), chatbotDocId))
+          .filter((q) => q.neq(q.field("isTranscriptPending"), true))
           .order("desc")
           .paginate(args.paginationOpts)
-      : baseQuery.order("desc").paginate(args.paginationOpts));
+      : baseQuery
+          .filter((q) => q.neq(q.field("isTranscriptPending"), true))
+          .order("desc")
+          .paginate(args.paginationOpts));
 
     const page = await Promise.all(
       conversations.page.map(async (conversation) => {
@@ -139,6 +143,10 @@ export const create = mutation({
     organizationId: v.string(),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.string()), // String chatbotId from embed snippet, NOT doc ID
+    kind: v.optional(
+      v.union(v.literal("chat"), v.literal("voice"), v.literal("video")),
+    ),
+    isTranscriptPending: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const session = await ctx.db.get(args.contactSessionId);
@@ -233,6 +241,8 @@ export const create = mutation({
       threadId,
       caseId,
       chatbotId: chatbot?._id ?? undefined,
+      kind: args.kind,
+      isTranscriptPending: args.isTranscriptPending,
     });
 
     return conversationId;

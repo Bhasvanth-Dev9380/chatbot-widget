@@ -11,19 +11,35 @@ import {
 } from "@/components/ai/message";
 import { useVapi } from "@/modules/widget/hooks/use-vapi";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
+import { useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { conversationIdAtom, screenAtom, organizationIdAtom, contactSessionIdAtomFamily } from "../../atoms/widget-atoms";
-import { useQuery } from "convex/react";
+import { chatbotIdAtom, conversationIdAtom, screenAtom, organizationIdAtom, contactSessionIdAtomFamily } from "../../atoms/widget-atoms";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 
+const PENDING_CONVERSATION_TYPE_KEY_PREFIX = "echo_widget_pending_conversation_type:";
+
+function setPendingConversationType(conversationId: string, type: "voice") {
+  try {
+    localStorage.setItem(`${PENDING_CONVERSATION_TYPE_KEY_PREFIX}${conversationId}`, type);
+  } catch {
+    // ignore
+  }
+}
+
 export const WidgetVoiceScreen = () => {
   const setScreen = useSetAtom(screenAtom);
+  const setConversationId = useSetAtom(conversationIdAtom);
   const conversationId = useAtomValue(conversationIdAtom);
   const organizationId = useAtomValue(organizationIdAtom);
+  const chatbotId = useAtomValue(chatbotIdAtom);
   const contactSessionId = useAtomValue(
     contactSessionIdAtomFamily(organizationId || "")
   );
+
+  const createConversation = useMutation(api.public.conversations.create);
+  const [shouldStartCall, setShouldStartCall] = useState(false);
 
   const conversation = useQuery(
     api.public.conversations.getOne,
@@ -40,6 +56,14 @@ export const WidgetVoiceScreen = () => {
     endCall,
     isConnecting,
   } = useVapi(conversation?.threadId ?? null, contactSessionId);
+
+  useEffect(() => {
+    if (!shouldStartCall) return;
+    if (!conversation?.threadId) return;
+    if (isConnecting || isConnected) return;
+    startCall();
+    setShouldStartCall(false);
+  }, [shouldStartCall, conversation?.threadId, isConnecting, isConnected, startCall]);
 
   return (
     <>
@@ -110,7 +134,33 @@ export const WidgetVoiceScreen = () => {
                 className="w-full"
                 disabled={isConnecting}
                 size="lg"
-                onClick={() => startCall()}
+                onClick={async () => {
+                  if (!organizationId || !contactSessionId) {
+                    setScreen("auth");
+                    return;
+                  }
+
+                  if (!conversationId) {
+                    const newConversationId = await (createConversation as any)({
+                      contactSessionId,
+                      organizationId,
+                      chatbotId: chatbotId || undefined,
+                      kind: "voice",
+                      isTranscriptPending: true,
+                    });
+                    setConversationId(newConversationId);
+                    setPendingConversationType(String(newConversationId), "voice");
+                    setShouldStartCall(true);
+                    return;
+                  }
+
+                  if (!conversation?.threadId) {
+                    setShouldStartCall(true);
+                    return;
+                  }
+
+                  startCall();
+                }}
               >
                 <MicIcon />
                 Start call

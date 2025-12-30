@@ -45,7 +45,7 @@ export const AISuggestion = ({
     <Button
       className={cn(
         "cursor-pointer rounded-full px-4 text-xs font-medium",
-        "hover:bg-primary hover:text-primary-foreground transition-colors",
+        "hover:[background:var(--primary-bg)] hover:text-primary-foreground transition-colors",
         className
       )}
       onClick={handleClick}

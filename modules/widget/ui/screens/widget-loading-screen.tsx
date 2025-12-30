@@ -49,16 +49,12 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
       : "skip"
   );
 
-  // Apply custom color as soon as settings are available
+  // Set the widget settings atom early for the header to use
   useEffect(() => {
-    if (widgetSettings?.appearance?.primaryColor) {
-      document.documentElement.style.setProperty('--primary', widgetSettings.appearance.primaryColor);
-    }
-    // Also set the widget settings atom early for the header to use
     if (widgetSettings && step === "org") {
       setWidgetSettings(toWidgetSettings(widgetSettings));
     }
-  }, [widgetSettings?.appearance?.primaryColor, widgetSettings, step, setWidgetSettings]);
+  }, [widgetSettings, step, setWidgetSettings]);
 
 
   useEffect(() => {
@@ -262,14 +258,9 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
   return (
     <>
       <WidgetHeader>
-        <div className="flex flex-col justify-between gap-y-2 px-2 py-6 font-semibold">
-            <p className="text-3xl">
-                Hi there! 👋
-            </p>
-            <p className="text-lg ">
-                Let&apos;s get you started
-            </p>
-
+        <div className="flex flex-col gap-y-0.5">
+          <p className="text-lg font-semibold leading-tight">Hi there! 👋</p>
+          <p className="text-sm opacity-80 leading-tight">Let&apos;s get you started</p>
         </div>
       </WidgetHeader>
       <div className="flex flex-1 flex-col items-center justify-center gap-y-4 p-4 text-muted-foreground">

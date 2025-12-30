@@ -50,6 +50,18 @@ export const getByBeyondPresenceAgentId = internalQuery({
   },
 });
 
+export const getManyByBeyondPresenceAgentId = internalQuery({
+  args: { beyondPresenceAgentId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("chatbots")
+      .withIndex("by_beyond_presence_agent_id", (q) =>
+        q.eq("beyondPresenceAgentId", args.beyondPresenceAgentId),
+      )
+      .collect();
+  },
+});
+
 // Migration: Add chatbotId to existing chatbots that don't have one
 export const migrateAddChatbotIds = internalMutation({
   args: {},

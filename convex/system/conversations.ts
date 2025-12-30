@@ -60,3 +60,24 @@ export const getByThreadId = internalQuery({
     return conversation;
   },
 });
+
+export const markTranscriptReady = internalMutation({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    const conversation = await ctx.db.get(args.conversationId);
+
+    if (!conversation) {
+      return;
+    }
+
+    if (conversation.isTranscriptPending !== true) {
+      return;
+    }
+
+    await ctx.db.patch(args.conversationId, {
+      isTranscriptPending: false,
+    });
+  },
+});
