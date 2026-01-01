@@ -1,7 +1,5 @@
 "use client";
 import { cn } from "@/lib/utils";
-import { useAtomValue } from "jotai";
-import { widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
 
 export const WidgetHeader = ({
   children,
@@ -10,17 +8,10 @@ export const WidgetHeader = ({
   children: React.ReactNode;
   className?: string;
 }) => {
-  const widgetSettings = useAtomValue(widgetSettingsAtom);
-  const customColor = widgetSettings?.appearance?.primaryColor;
-
   return (
-    <header 
-      className={cn(
-        "p-4 text-primary-foreground shadow-sm",
-        !customColor && "bg-primary",
-        className,
-      )}
-      style={customColor ? { backgroundColor: customColor } : undefined}
+    <header
+      className={cn("p-4 text-primary-foreground shadow-sm", className)}
+      style={{ background: "var(--primary-bg)" }}
     >
       {children}
     </header>

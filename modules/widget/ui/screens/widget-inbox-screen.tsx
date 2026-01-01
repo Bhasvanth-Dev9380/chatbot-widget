@@ -14,6 +14,26 @@ import { api } from "@/convex/_generated/api";
 import { useInfiniteScroll } from "../../hooks/use-infinite-scroll";
 import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 
+const PENDING_CONVERSATION_TYPE_KEY_PREFIX = "echo_widget_pending_conversation_type:";
+
+function readPendingConversationType(conversationId: string): "video" | "voice" | null {
+  try {
+    const value = localStorage.getItem(`${PENDING_CONVERSATION_TYPE_KEY_PREFIX}${conversationId}`);
+    if (value === "video" || value === "voice") return value;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingConversationType(conversationId: string) {
+  try {
+    localStorage.removeItem(`${PENDING_CONVERSATION_TYPE_KEY_PREFIX}${conversationId}`);
+  } catch {
+    // ignore
+  }
+}
+
 export const WidgetInboxScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
@@ -35,17 +55,24 @@ export const WidgetInboxScreen = () => {
     },
   );
 
-  const getConversationPreview = (lastMessage: any | null) => {
+  const getConversationPreview = (conversationId: string, lastMessage: any | null) => {
     if (!lastMessage) return { text: "No messages yet", type: "Chat" };
 
     const messageContent = lastMessage.text;
 
     if (typeof messageContent === 'string' && messageContent.startsWith("[Voice]")) {
+      clearPendingConversationType(conversationId);
       return { text: messageContent.replace("[Voice] ", ""), type: "Voice" };
     }
 
     if (typeof messageContent === 'string' && messageContent.startsWith("[Video]")) {
+      clearPendingConversationType(conversationId);
       return { text: messageContent.replace("[Video] ", ""), type: "Video" };
+    }
+
+    const pendingType = readPendingConversationType(conversationId);
+    if (pendingType) {
+      return { text: "", type: pendingType === "voice" ? "PendingVoice" : "PendingVideo" };
     }
 
     return { text: messageContent || "", type: "Chat" };
@@ -74,12 +101,17 @@ export const WidgetInboxScreen = () => {
       <div className="flex flex-1 flex-col  gap-y-2 p-4 overflow-y-auto">
 
         {conversations?.results.length > 0 &&
-          conversations?.results.map((conversation) => (
+          conversations?.results
+            .filter((conversation) => {
+              const preview = getConversationPreview(String(conversation._id), conversation.lastMessage);
+              return preview.type !== "PendingVoice" && preview.type !== "PendingVideo";
+            })
+            .map((conversation) => (
             <Button
               className="h-20 w-full justify-between"
               key={conversation._id}
               onClick={() => {
-                const preview = getConversationPreview(conversation.lastMessage);
+                const preview = getConversationPreview(String(conversation._id), conversation.lastMessage);
                 setIsVoiceConversation(preview.type === "Voice" || preview.type === "Video");
                 setConversationId(conversation._id);
                 setScreen("chat");
@@ -89,7 +121,7 @@ export const WidgetInboxScreen = () => {
               <div className="flex w-full flex-col gap-4 overflow-hidden text-start">
                 <div className="flex w-full items-center justify-between gap-x-2">
                   <p className="text-muted-foreground text-xs">
-                    {getConversationPreview(conversation.lastMessage).type}
+                    {getConversationPreview(String(conversation._id), conversation.lastMessage).type}
                   </p>
                   <p className="text-muted-foreground text-xs">
                     {formatDistanceToNow(new Date(conversation._creationTime))}
@@ -97,7 +129,7 @@ export const WidgetInboxScreen = () => {
                 </div>
                 <div className="flex w-full items-center justify-between gap-x-2">
                   <p className="truncate text-sm">
-                    {getConversationPreview(conversation.lastMessage).text}
+                    {getConversationPreview(String(conversation._id), conversation.lastMessage).text}
                   </p>
                   <ConversationStatusIcon status = {conversation.status} />
 

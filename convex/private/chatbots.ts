@@ -27,6 +27,11 @@ export const create = mutation({
       suggestion2: v.optional(v.string()),
       suggestion3: v.optional(v.string()),
     }),
+    appearance: v.optional(
+      v.object({
+        primaryColor: v.optional(v.string()),
+      }),
+    ),
     isDefault: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -59,6 +64,12 @@ export const create = mutation({
       isDefault: args.isDefault ?? false,
       aiAvatarEnabled: false,
       chatbotId, // Set the string chatbotId for embed snippets
+      appearance:
+        args.appearance &&
+        typeof args.appearance === "object" &&
+        !Array.isArray(args.appearance)
+          ? { primaryColor: args.appearance.primaryColor }
+          : undefined,
       createdAt: now,
       updatedAt: now,
     });

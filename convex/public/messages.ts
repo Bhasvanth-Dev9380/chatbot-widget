@@ -59,6 +59,16 @@ export const createFromTranscript = action({
         content: args.text,
       },
     });
+
+    // ✅ If this is a transcript conversation, make it visible once transcript starts.
+    const text = String(args.text ?? "");
+    if (text.startsWith("[Voice]") || text.startsWith("[Video]")) {
+      if (conversation.isTranscriptPending === true) {
+        await ctx.runMutation(internal.system.conversations.markTranscriptReady, {
+          conversationId: conversation._id,
+        });
+      }
+    }
   },
 });
 

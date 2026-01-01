@@ -112,6 +112,7 @@ export const getMany = query({
         .filter((q) =>
           q.eq(q.field("organizationId"), args.organizationId),
         )
+        .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
         .paginate(pagination);
 
@@ -134,6 +135,7 @@ export const getMany = query({
             )
             .eq("organizationId", args.organizationId),
         )
+        .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
         .paginate(pagination);
     } else {
@@ -142,6 +144,7 @@ export const getMany = query({
         .withIndex("by_organization_id", (q) =>
           q.eq("organizationId", args.organizationId),
         )
+        .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
         .paginate(pagination);
     }

@@ -131,6 +131,10 @@ export default defineSchema({
       v.literal("escalated"),
       v.literal("resolved")
     ),
+    kind: v.optional(
+      v.union(v.literal("chat"), v.literal("voice"), v.literal("video")),
+    ),
+    isTranscriptPending: v.optional(v.boolean()),
     json: v.optional(v.string()),
   })
     .index("by_organization_id", ["organizationId"])

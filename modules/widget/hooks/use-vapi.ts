@@ -1,5 +1,5 @@
 import Vapi from "@vapi-ai/web";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { vapiSecretsAtom, widgetSettingsAtom } from "../atoms/widget-atoms";
 import { useAtomValue } from "jotai";
 import { useAction } from "convex/react";
@@ -20,19 +20,28 @@ export const useVapi = (
 
   const createFromTranscript = useAction(api.public.messages.createFromTranscript);
 
-  const [vapi, setVapi] = useState<Vapi | null>(null);
+  const threadIdRef = useRef<string | null>(threadId);
+  const contactSessionIdRef = useRef<Id<"contactSessions"> | null>(contactSessionId);
+  const vapiRef = useRef<Vapi | null>(null);
+
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
 
   useEffect(() => {
-    if (!vapiSecrets) {
-      return;
-    }
+    threadIdRef.current = threadId;
+  }, [threadId]);
+
+  useEffect(() => {
+    contactSessionIdRef.current = contactSessionId;
+  }, [contactSessionId]);
+
+  useEffect(() => {
+    if (!vapiSecrets) return;
 
     const vapiInstance = new Vapi(vapiSecrets.publicApiKey);
-    setVapi(vapiInstance);
+    vapiRef.current = vapiInstance;
 
     vapiInstance.on("call-start", () => {
       setIsConnected(true);
@@ -68,11 +77,13 @@ export const useVapi = (
         };
         setTranscript((prev) => [...prev, newTranscript]);
 
-        // Persist to Convex
-        if (threadId && contactSessionId) {
-          createFromTranscript({
-            threadId,
-            contactSessionId,
+        // Persist to Convex in real-time.
+        const currentThreadId = threadIdRef.current;
+        const currentContactSessionId = contactSessionIdRef.current;
+        if (currentThreadId && currentContactSessionId) {
+          void createFromTranscript({
+            threadId: currentThreadId,
+            contactSessionId: currentContactSessionId,
             role: newTranscript.role,
             text: `[Voice] ${newTranscript.text}`,
           });
@@ -83,7 +94,7 @@ export const useVapi = (
     return () => {
       vapiInstance?.stop();
     };
-  }, [vapiSecrets, threadId, contactSessionId, createFromTranscript]);
+  }, [vapiSecrets, createFromTranscript]);
 
   const startCall = () => {
     if (!vapiSecrets || !widgetSettings?.vapiSettings?.assistantId) {
@@ -91,14 +102,14 @@ export const useVapi = (
     }
     setIsConnecting(true);
 
-    if (vapi) {
-      vapi.start(widgetSettings.vapiSettings.assistantId);
+    if (vapiRef.current) {
+      vapiRef.current.start(widgetSettings.vapiSettings.assistantId);
     }
   };
 
   const endCall = () => {
-    if (vapi) {
-      vapi.stop();
+    if (vapiRef.current) {
+      vapiRef.current.stop();
     }
   };
 

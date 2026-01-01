@@ -7,8 +7,18 @@ import { useSetAtom, useAtomValue } from "jotai";
 import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom} from"../../atoms/widget-atoms";
 import {useMutation} from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { WidgetFooter } from "../components/widget-footer";
+
+const PENDING_CONVERSATION_TYPE_KEY_PREFIX = "echo_widget_pending_conversation_type:";
+
+function setPendingConversationType(conversationId: string, type: "video" | "voice") {
+  try {
+    localStorage.setItem(`${PENDING_CONVERSATION_TYPE_KEY_PREFIX}${conversationId}`, type);
+  } catch {
+    // ignore
+  }
+}
 
 export const WidgetSelectionScreen = () => {
 
@@ -33,6 +43,17 @@ export const WidgetSelectionScreen = () => {
   const createConversation = useMutation(api.public.conversations.create);
   const [isPending, setIsPending] = useState(false);
 
+  useEffect(() => {
+    const size = widgetSettings?.appearance?.size ?? "medium";
+    window.parent.postMessage(
+      {
+        type: "updateAppearance",
+        payload: { size },
+      },
+      "*",
+    );
+  }, [widgetSettings?.appearance?.size]);
+
   const handleNewVideoConversation = async () => {
     if (!organizationId) {
       setScreen("error");
@@ -48,12 +69,15 @@ export const WidgetSelectionScreen = () => {
     setIsPending(true);
 
     try {
-      const conversationId = await createConversation({
+      const conversationId = await (createConversation as any)({
         contactSessionId,
         organizationId,
         chatbotId: chatbotId || undefined,
+        kind: "video",
+        isTranscriptPending: true,
       });
       setConversationId(conversationId);
+      setPendingConversationType(String(conversationId), "video");
       setScreen("avatar");
     } catch {
       setScreen("auth");
@@ -75,20 +99,11 @@ export const WidgetSelectionScreen = () => {
       return;
     }
 
-    setIsPending(true);
-
     try {
-      const conversationId = await createConversation({
-        contactSessionId,
-        organizationId,
-        chatbotId: chatbotId || undefined,
-      });
-      setConversationId(conversationId);
+      setConversationId(null);
       setScreen("voice");
     } catch {
       setScreen("auth");
-    } finally {
-      setIsPending(false);
     }
   };
 
