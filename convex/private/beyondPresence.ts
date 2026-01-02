@@ -280,3 +280,114 @@ export const deleteAgent = action({
     return null;
   },
 });
+
+export const getOrCreateLanguageAgent = action({
+  args: {
+    organizationId: v.string(),
+    baseAgentId: v.string(),
+    language: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ agentId: string }> => {
+    const existing: { agentId?: string } | null = await ctx.runQuery(
+      (internal as any).system.beyondPresenceLanguageAgents.getByOrgBaseLanguage,
+      {
+        organizationId: args.organizationId,
+        baseAgentId: args.baseAgentId,
+        language: args.language,
+      },
+    );
+
+    if (existing?.agentId) {
+      return { agentId: existing.agentId };
+    }
+
+    const { apiKey, baseUrl } = await getBeyondPresenceCredentials(
+      ctx,
+      args.organizationId,
+    );
+
+    const getResp = await fetch(`${baseUrl}/v1/agents/${args.baseAgentId}`, {
+      method: "GET",
+      headers: {
+        "x-api-key": apiKey,
+      },
+    });
+
+    if (!getResp.ok) {
+      const body = await readJsonOrText(getResp);
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: getErrorMessageFromBody(body) ?? "Failed to retrieve base agent",
+      });
+    }
+
+    const getBody = await readJsonOrText(getResp);
+    const baseAgent = (getBody.json ?? null) as any;
+
+    const createBody: Record<string, unknown> = {
+      name: `${String(baseAgent?.name ?? "Agent")} (${args.language})`,
+      avatar_id: String(baseAgent?.avatar_id ?? ""),
+      system_prompt: String(baseAgent?.system_prompt ?? ""),
+      language: args.language,
+      greeting: typeof baseAgent?.greeting === "string" ? baseAgent.greeting : undefined,
+      max_session_length_minutes:
+        typeof baseAgent?.max_session_length_minutes === "number"
+          ? baseAgent.max_session_length_minutes
+          : 30,
+    };
+
+    if (Array.isArray(baseAgent?.capabilities)) {
+      createBody.capabilities = baseAgent.capabilities;
+    }
+    if (baseAgent?.llm && typeof baseAgent.llm === "object" && !Array.isArray(baseAgent.llm)) {
+      createBody.llm = baseAgent.llm;
+    }
+
+    if (!createBody.avatar_id || !createBody.system_prompt) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: "Base agent is missing required fields (avatar_id/system_prompt)",
+      });
+    }
+
+    const createResp = await fetch(`${baseUrl}/v1/agents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+      },
+      body: JSON.stringify(createBody),
+    });
+
+    if (!createResp.ok) {
+      const body = await readJsonOrText(createResp);
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: getErrorMessageFromBody(body) ?? "Failed to create language agent",
+      });
+    }
+
+    const okBody = await readJsonOrText(createResp);
+    const created = (okBody.json ?? null) as any;
+    const newAgentId = String(created?.id ?? "");
+
+    if (!newAgentId) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: "Beyond Presence create agent returned no id",
+      });
+    }
+
+    await ctx.runMutation(
+      (internal as any).system.beyondPresenceLanguageAgents.create,
+      {
+        organizationId: args.organizationId,
+        baseAgentId: args.baseAgentId,
+        language: args.language,
+        agentId: newAgentId,
+      },
+    );
+
+    return { agentId: newAgentId };
+  },
+});

@@ -244,6 +244,16 @@ export default defineSchema({
     .index("by_call_id", ["callId"])
     .index("by_conversation_id", ["conversationId"]),
 
+  beyondPresenceLanguageAgents: defineTable({
+    organizationId: v.string(),
+    baseAgentId: v.string(),
+    language: v.string(),
+    agentId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_org_base_language", ["organizationId", "baseAgentId", "language"])
+    .index("by_agent_id", ["agentId"]),
+
   tokenUsageEvents: defineTable({
     organizationId: v.string(),
     provider: v.string(),

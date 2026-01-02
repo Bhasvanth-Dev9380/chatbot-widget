@@ -42,9 +42,51 @@ function jsonResponse(status: number, body: unknown) {
   });
 }
 
-function toMillis(iso: string): number | null {
-  const t = Date.parse(iso);
+function toMillis(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    // Heuristic: seconds vs milliseconds
+    return value > 1e12 ? value : Math.floor(value * 1000);
+  }
+
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const asNum = Number(trimmed);
+  if (Number.isFinite(asNum)) {
+    return asNum > 1e12 ? asNum : Math.floor(asNum * 1000);
+  }
+
+  const t = Date.parse(trimmed);
   return Number.isFinite(t) ? t : null;
+}
+
+function toRole(sender: unknown): "user" | "assistant" {
+  const s = typeof sender === "string" ? sender.toLowerCase() : "";
+  if (s === "agent" || s === "assistant" || s === "ai" || s === "bot") return "assistant";
+  return "user";
+}
+
+function extractAgentId(payload: any): string | undefined {
+  return (
+    payload?.call_data?.agentId ??
+    payload?.call_data?.agent_id ??
+    payload?.call_data?.agent ??
+    payload?.agentId ??
+    payload?.agent_id ??
+    payload?.call?.agentId ??
+    payload?.call?.agent_id ??
+    payload?.call?.agent?.id
+  );
+}
+
+function extractUserName(payload: any): string | undefined {
+  return (
+    payload?.call_data?.userName ??
+    payload?.call_data?.user_name ??
+    payload?.user_name ??
+    payload?.userName
+  );
 }
 
 const router = httpRouter();
@@ -80,7 +122,8 @@ router.route({
         return jsonResponse(200, { ok: true });
       }
 
-      const callId: string | undefined = payload?.call_id;
+      const callId: string | undefined =
+        payload?.call_id ?? payload?.callId ?? payload?.call?.id;
       if (!callId) {
         return jsonResponse(200, { ok: true });
       }
@@ -90,12 +133,26 @@ router.route({
       });
 
       if (!link) {
-        const agentId: string | undefined = payload?.call_data?.agentId;
-        const userName: string | undefined =
-          payload?.call_data?.userName ?? payload?.user_name;
+        let agentId: string | undefined = extractAgentId(payload);
+        const userName: string | undefined = extractUserName(payload);
 
         if (!agentId) {
+          console.warn("[beyond-presence/webhook] Missing agentId in payload", {
+            callId,
+            keys: Object.keys(payload ?? {}),
+          });
           return jsonResponse(200, { ok: true });
+        }
+
+        const languageAgent = await ctx.runQuery(
+          systemApi.beyondPresenceLanguageAgents.getByAgentId,
+          {
+            agentId,
+          },
+        );
+
+        if (languageAgent?.baseAgentId) {
+          agentId = languageAgent.baseAgentId;
         }
 
         const chatbots = await ctx.runQuery(
@@ -106,6 +163,10 @@ router.route({
         );
 
         if (!chatbots || chatbots.length === 0) {
+          console.warn("[beyond-presence/webhook] No chatbots found for agentId", {
+            callId,
+            agentId,
+          });
           return jsonResponse(200, { ok: true });
         }
 
@@ -164,18 +225,23 @@ router.route({
 
       if (eventType === "message") {
         const body = payload as WebhookMessageEvent;
-        const sentAtMs = toMillis(body.message?.sent_at);
-        if (sentAtMs === null) return jsonResponse(200, { ok: true });
+        const sentAtMsRaw = toMillis((body as any)?.message?.sent_at);
+        const sentAtMs = sentAtMsRaw ?? Date.now();
 
-        if (
-          link.lastProcessedSentAt !== undefined &&
-          sentAtMs <= link.lastProcessedSentAt
-        ) {
-          return jsonResponse(200, { ok: true });
-        }
+        const lastProcessed = link.lastProcessedSentAt;
+        const monotonicSentAt =
+          lastProcessed !== undefined && sentAtMs <= lastProcessed
+            ? lastProcessed + 1
+            : sentAtMs;
 
-        const role = body.message.sender === "user" ? "user" : "assistant";
-        const content = `[Video] ${body.message.message}`;
+        const role = toRole((body as any)?.message?.sender);
+        const messageText = String(
+          (body as any)?.message?.message ??
+            (body as any)?.message?.text ??
+            (body as any)?.message?.content ??
+            "",
+        );
+        const content = `[Video] ${messageText}`;
 
         await saveMessage(ctx, components.agent, {
           threadId: link.threadId,
@@ -191,7 +257,7 @@ router.route({
 
         await ctx.runMutation(systemApi.beyondPresenceCallLinks.updateLastProcessedSentAt, {
           callId,
-          sentAt: sentAtMs,
+          sentAt: monotonicSentAt,
         });
 
         return jsonResponse(200, { ok: true });
@@ -201,21 +267,30 @@ router.route({
       const messages = Array.isArray(body.messages) ? body.messages : [];
 
       const sorted = messages
-        .map((m) => ({ ...m, sentAtMs: toMillis(m.sent_at) }))
-        .filter((m) => m.sentAtMs !== null)
-        .sort((a, b) => (a.sentAtMs as number) - (b.sentAtMs as number));
+        .map((m) => ({ ...m, sentAtMs: toMillis((m as any).sent_at) }))
+        .sort((a, b) => {
+          const ax = a.sentAtMs ?? Number.POSITIVE_INFINITY;
+          const bx = b.sentAtMs ?? Number.POSITIVE_INFINITY;
+          return ax - bx;
+        });
 
       for (const m of sorted) {
-        const sentAtMs = m.sentAtMs as number;
+        const sentAtMs = (m.sentAtMs as number | null) ?? Date.now();
         if (
           link.lastProcessedSentAt !== undefined &&
           sentAtMs <= link.lastProcessedSentAt
         ) {
-          continue;
+          // Same rationale as above: allow same-timestamp messages.
+          // We'll still record by making timestamp monotonic.
         }
 
-        const role = m.sender === "user" ? "user" : "assistant";
-        const content = `[Video] ${m.message}`;
+        const monotonicSentAt =
+          link.lastProcessedSentAt !== undefined && sentAtMs <= link.lastProcessedSentAt
+            ? link.lastProcessedSentAt + 1
+            : sentAtMs;
+
+        const role = toRole((m as any).sender);
+        const content = `[Video] ${String((m as any).message ?? "")}`;
 
         await saveMessage(ctx, components.agent, {
           threadId: link.threadId,
@@ -231,7 +306,7 @@ router.route({
 
         await ctx.runMutation(systemApi.beyondPresenceCallLinks.updateLastProcessedSentAt, {
           callId,
-          sentAt: sentAtMs,
+          sentAt: monotonicSentAt,
         });
 
         link = await ctx.runQuery(systemApi.beyondPresenceCallLinks.getByCallId, {
