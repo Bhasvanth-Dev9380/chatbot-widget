@@ -1,18 +1,77 @@
 "use client";
 
 import { ArrowLeftIcon } from "lucide-react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, useAtom } from "jotai";
 import { Button } from "@/components/ui/button";
-import { widgetSettingsAtom, screenAtom } from "@/modules/widget/atoms/widget-atoms";
+import {
+  widgetSettingsAtom,
+  screenAtom,
+  organizationIdAtom,
+  contactSessionIdAtomFamily,
+  videoCallLanguageAtomFamily,
+} from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../../../../convex/_generated/api";
+import { useAction } from "convex/react";
 
 export const WidgetAvatarScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const widgetSettings = useAtomValue(widgetSettingsAtom);
 
-  const agentId = widgetSettings?.beyondPresenceAgentId;
+  const organizationId = useAtomValue(organizationIdAtom);
+  const contactSessionId = useAtomValue(
+    contactSessionIdAtomFamily(organizationId || ""),
+  );
+
+  const contactSessionKey = contactSessionId ? String(contactSessionId) : "";
+  const [videoCallLanguage] = useAtom(
+    videoCallLanguageAtomFamily(contactSessionKey || "no_session"),
+  );
+
+  const selectedLanguage = useMemo(() => videoCallLanguage ?? "en", [videoCallLanguage]);
+  const [resolvedAgentId, setResolvedAgentId] = useState<string | null>(null);
+  const resolveLanguageAgent = useAction(
+    (api as any).public.beyondPresence.getOrCreateLanguageAgent,
+  );
+
+  const baseAgentId = widgetSettings?.beyondPresenceAgentId;
   const isSecureContext = typeof window !== "undefined" ? window.isSecureContext : true;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!organizationId || !baseAgentId) {
+        setResolvedAgentId(null);
+        return;
+      }
+
+      try {
+        const result = await resolveLanguageAgent({
+          organizationId,
+          baseAgentId,
+          language: selectedLanguage,
+        });
+
+        if (!cancelled) {
+          setResolvedAgentId(result?.agentId ?? baseAgentId);
+        }
+      } catch {
+        if (!cancelled) {
+          setResolvedAgentId(baseAgentId);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [organizationId, baseAgentId, selectedLanguage, resolveLanguageAgent]);
+
+  const agentIdToUse = resolvedAgentId ?? baseAgentId ?? null;
 
   useEffect(() => {
     const size = widgetSettings?.appearance?.size ?? "medium";
@@ -60,10 +119,11 @@ export const WidgetAvatarScreen = () => {
             <ArrowLeftIcon />
           </Button>
           <p>AI Avatar</p>
+          <span className="text-xs opacity-80">({selectedLanguage})</span>
         </div>
       </WidgetHeader>
 
-      {!agentId ? (
+      {!agentIdToUse ? (
         <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
           AI Avatar is not configured.
         </div>
@@ -81,7 +141,7 @@ export const WidgetAvatarScreen = () => {
             </p>
             <Button asChild size="sm" variant="outline">
               <a
-                href={`https://bey.chat/${agentId}`}
+                href={`https://bey.chat/${agentIdToUse}`}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -92,7 +152,7 @@ export const WidgetAvatarScreen = () => {
 
           <iframe
             title="AI Avatar"
-            src={`https://bey.chat/${agentId}`}
+            src={`https://bey.chat/${agentIdToUse}`}
             className="h-full w-full flex-1 border-0"
             allow="camera; microphone; fullscreen"
             allowFullScreen

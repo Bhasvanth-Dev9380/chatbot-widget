@@ -52,6 +52,13 @@ export const contactSessionIdAtomFamily = atomFamily((organizationId: string) =>
         null)
 });
 
+export const videoCallLanguageAtomFamily = atomFamily((contactSessionId: string) => {
+  return atomWithStorage<string | null>(
+    `echo_video_call_language_${contactSessionId}`,
+    null,
+  );
+});
+
 
 export const conversationIdAtom = atom<Id<"conversations"> | null>(null);
 export const widgetSettingsAtom = atom<WidgetSettings | null>(null);

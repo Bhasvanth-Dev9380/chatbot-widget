@@ -3,12 +3,27 @@
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@/components/ui/button";
 import { ChevronRightIcon, MessageSquareTextIcon,MicIcon, PhoneIcon, VideoIcon } from "lucide-react";
-import { useSetAtom, useAtomValue } from "jotai";
-import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom} from"../../atoms/widget-atoms";
+import { useSetAtom, useAtomValue, useAtom } from "jotai";
+import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom, videoCallLanguageAtomFamily} from"../../atoms/widget-atoms";
 import {useMutation} from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useEffect, useState } from "react";
 import { WidgetFooter } from "../components/widget-footer";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const PENDING_CONVERSATION_TYPE_KEY_PREFIX = "echo_widget_pending_conversation_type:";
 
@@ -19,6 +34,28 @@ function setPendingConversationType(conversationId: string, type: "video" | "voi
     // ignore
   }
 }
+
+const VIDEO_CALL_LANGUAGES: Array<{ code: string; label: string }> = [
+  { code: "en", label: "English" },
+  { code: "en-US", label: "English (US)" },
+  { code: "en-GB", label: "English (UK)" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "it", label: "Italian" },
+  { code: "pt", label: "Portuguese" },
+  { code: "pt-BR", label: "Portuguese (Brazil)" },
+  { code: "nl", label: "Dutch" },
+  { code: "ru", label: "Russian" },
+  { code: "tr", label: "Turkish" },
+  { code: "ar", label: "Arabic" },
+  { code: "hi", label: "Hindi" },
+  { code: "bn", label: "Bengali" },
+  { code: "zh", label: "Chinese" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "vi", label: "Vietnamese" },
+];
 
 export const WidgetSelectionScreen = () => {
 
@@ -42,6 +79,15 @@ export const WidgetSelectionScreen = () => {
 
   const createConversation = useMutation(api.public.conversations.create);
   const [isPending, setIsPending] = useState(false);
+  const [isLanguageDialogOpen, setIsLanguageDialogOpen] = useState(false);
+
+  const contactSessionKey = contactSessionId ? String(contactSessionId) : "";
+  const [videoCallLanguage, setVideoCallLanguage] = useAtom(
+    videoCallLanguageAtomFamily(contactSessionKey || "no_session"),
+  );
+  const [pendingSelectedLanguage, setPendingSelectedLanguage] = useState<string>(
+    videoCallLanguage ?? "en",
+  );
 
   useEffect(() => {
     const size = widgetSettings?.appearance?.size ?? "medium";
@@ -65,6 +111,25 @@ export const WidgetSelectionScreen = () => {
       setScreen("auth");
       return;
     }
+
+    setPendingSelectedLanguage(videoCallLanguage ?? "en");
+    setIsLanguageDialogOpen(true);
+  };
+
+  const handleConfirmVideoLanguage = async () => {
+    if (!organizationId) {
+      setScreen("error");
+      setErrorMessage("Organization ID is missing");
+      return;
+    }
+
+    if (!contactSessionId) {
+      setScreen("auth");
+      return;
+    }
+
+    setVideoCallLanguage(pendingSelectedLanguage);
+    setIsLanguageDialogOpen(false);
 
     setIsPending(true);
 
@@ -183,6 +248,48 @@ export const WidgetSelectionScreen = () => {
             <ChevronRightIcon />
           </Button>
         )}
+
+        <Dialog open={isLanguageDialogOpen} onOpenChange={setIsLanguageDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Choose a language</DialogTitle>
+              <DialogDescription>
+                Select the language you want to speak in during the video call.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-col gap-2">
+              <Select
+                value={pendingSelectedLanguage}
+                onValueChange={(v) => setPendingSelectedLanguage(v)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select language" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VIDEO_CALL_LANGUAGES.map((l) => (
+                    <SelectItem key={l.code} value={l.code}>
+                      {l.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsLanguageDialogOpen(false)}
+                disabled={isPending}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleConfirmVideoLanguage} disabled={isPending}>
+                Continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
   {hasVapiSecrets && widgetSettings?.vapiSettings?.assistantId && (
         <Button
           className="h-16 w-full justify-between"

@@ -1,5 +1,5 @@
 "use client";
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { WidgetAuthScreen } from "@/modules/widget/ui/screens/widget-auth-screen";
 import { screenAtom, widgetSettingsAtom } from "@/modules/widget/atoms/widget-atoms";
@@ -12,6 +12,7 @@ import { WidgetVoiceScreen } from "../screens/widget-voice-screen";
 import { WidgetContactScreen } from "../screens/widget-contact-screen";
 import { WidgetAvatarScreen } from "../screens/widget-avatar-screen";
 import { PoweredByFooter } from "../components/powered-by-footer";
+import { WIDGET_SCREENS } from "@/modules/widget/constants";
 
 const normalizeHex = (hex: string) => {
   const h = hex.trim();
@@ -34,6 +35,7 @@ interface Props {
 export const WidgetView = ({ organizationId, chatbotId }: Props) => {
 
   const screen = useAtomValue(screenAtom);
+  const setScreen = useSetAtom(screenAtom);
   const widgetSettings = useAtomValue(widgetSettingsAtom);
 
   const [previewPrimaryColor, setPreviewPrimaryColor] = useState<string | null>(null);
@@ -74,6 +76,13 @@ export const WidgetView = ({ organizationId, chatbotId }: Props) => {
       if (data.type === "previewAppearance") {
         const next = data?.payload?.primaryColor;
         setPreviewPrimaryColor(typeof next === "string" ? next : null);
+      }
+
+      if (data.type === "setScreen") {
+        const next = data?.payload?.screen;
+        if (typeof next !== "string") return;
+        if (!(WIDGET_SCREENS as readonly string[]).includes(next)) return;
+        setScreen(next as any);
       }
     };
 

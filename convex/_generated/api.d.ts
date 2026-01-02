@@ -35,6 +35,7 @@ import type * as private_tokenUsage from "../private/tokenUsage.js";
 import type * as private_vapi from "../private/vapi.js";
 import type * as private_voiceTranscripts from "../private/voiceTranscripts.js";
 import type * as private_widgetSettings from "../private/widgetSettings.js";
+import type * as public_beyondPresence from "../public/beyondPresence.js";
 import type * as public_chatbots from "../public/chatbots.js";
 import type * as public_contactSessions from "../public/contactSessions.js";
 import type * as public_conversations from "../public/conversations.js";
@@ -50,6 +51,7 @@ import type * as system_ai_tools_escalateConversation from "../system/ai/tools/e
 import type * as system_ai_tools_resolveConversation from "../system/ai/tools/resolveConversation.js";
 import type * as system_ai_tools_search from "../system/ai/tools/search.js";
 import type * as system_beyondPresenceCallLinks from "../system/beyondPresenceCallLinks.js";
+import type * as system_beyondPresenceLanguageAgents from "../system/beyondPresenceLanguageAgents.js";
 import type * as system_chatbots from "../system/chatbots.js";
 import type * as system_contactSessions from "../system/contactSessions.js";
 import type * as system_conversations from "../system/conversations.js";
@@ -97,6 +99,7 @@ declare const fullApi: ApiFromModules<{
   "private/vapi": typeof private_vapi;
   "private/voiceTranscripts": typeof private_voiceTranscripts;
   "private/widgetSettings": typeof private_widgetSettings;
+  "public/beyondPresence": typeof public_beyondPresence;
   "public/chatbots": typeof public_chatbots;
   "public/contactSessions": typeof public_contactSessions;
   "public/conversations": typeof public_conversations;
@@ -112,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   "system/ai/tools/resolveConversation": typeof system_ai_tools_resolveConversation;
   "system/ai/tools/search": typeof system_ai_tools_search;
   "system/beyondPresenceCallLinks": typeof system_beyondPresenceCallLinks;
+  "system/beyondPresenceLanguageAgents": typeof system_beyondPresenceLanguageAgents;
   "system/chatbots": typeof system_chatbots;
   "system/contactSessions": typeof system_contactSessions;
   "system/conversations": typeof system_conversations;
