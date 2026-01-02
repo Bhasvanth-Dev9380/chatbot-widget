@@ -9,7 +9,7 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "text-primary-foreground hover:opacity-90",
+        default: "bg-primary text-primary-foreground hover:opacity-90",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
@@ -49,17 +49,19 @@ function Button({
   }) {
   const Comp = asChild ? Slot : "button"
 
+  const { style: styleProp, ...rest } = props as any
+
   const style =
-    variant === "default"
-      ? { ...(props as any).style, background: "var(--primary-bg, var(--primary))" }
-      : (props as any).style
+    !variant || variant === "default"
+      ? { ...styleProp, background: "var(--primary-bg, var(--primary))" }
+      : styleProp
 
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      {...rest}
       style={style}
-      {...props}
     />
   )
 }
