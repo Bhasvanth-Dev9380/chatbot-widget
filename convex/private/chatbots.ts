@@ -343,6 +343,23 @@ export const uploadLogo = mutation({
     size: v.number(),
   },
   handler: async (ctx, args) => {
+    const lowerName = args.fileName.toLowerCase();
+    const isSvg = args.mimeType === "image/svg+xml" || lowerName.endsWith(".svg");
+    if (!isSvg) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: "Only SVG logos are supported",
+      });
+    }
+
+    const MAX_LOGO_BYTES = 2 * 1024 * 1024;
+    if (args.size > MAX_LOGO_BYTES) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: "Logo must be smaller than 2MB",
+      });
+    }
+
     const chatbot = await ctx.db.get(args.chatbotId);
 
     if (!chatbot) {

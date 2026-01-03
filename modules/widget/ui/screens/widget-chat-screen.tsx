@@ -26,8 +26,6 @@ import {
   AIInput,
   AIInputSubmit,
   AIInputTextarea,
-  AIInputToolbar,
-  AIInputTools,
 } from "@/components/ai/input";
 import { AIMessage, AIMessageContent } from "@/components/ai/message";
 import { AIResponse } from "@/components/ai/response";
@@ -300,13 +298,18 @@ form.reset();
       )}
 
       <Form {...form}>
-        <AIInput onSubmit={form.handleSubmit(onSubmit)}>
+        <AIInput
+          className="rounded-none border-x-0 border-b-0 shadow-none"
+          onSubmit={form.handleSubmit(onSubmit)}
+        >
+          <div className="relative">
           <FormField
             control={form.control}
             name="message"
             render={({ field }) => (
               <AIInputTextarea
                 aria-label="Message input"
+                className="pr-14"
                 disabled={isVoiceConversation ||
   typingState !== "idle" ||
   conversation?.status === "resolved"
@@ -339,10 +342,11 @@ form.reset();
               />
             )}
           />
-          <AIInputToolbar>
-            <AIInputTools />
-            <AIInputSubmit disabled={isVoiceConversation || typingState !== "idle"} />
-          </AIInputToolbar>
+          <AIInputSubmit
+            className="absolute bottom-2 right-2 h-9 w-9 rounded-lg"
+            disabled={isVoiceConversation || typingState !== "idle"}
+          />
+          </div>
         </AIInput>
       </Form>
     </>
