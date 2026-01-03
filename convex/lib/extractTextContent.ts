@@ -18,6 +18,14 @@ const SUPPORTED_IMAGE_TYPES = [
   "image/gif",
 ] as const;
 
+const SUPPORTED_VIDEO_TYPES = [
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+] as const;
+
+const MAX_WHISPER_BYTES = 25 * 1024 * 1024;
+
 const SYSTEM_PROMPTS = {
   image: "You turn images into text. If it is a photo of a document, transcribe it. If it is not a document, describe it.",
   pdf: "You transform PDF files into text.",
@@ -45,11 +53,47 @@ export async function extractTextContent(
     if (SUPPORTED_IMAGE_TYPES.some((type) => type === mimeType)) {
         return extractImageText(url, args.organizationId, ctx);
     }
+
+    if (SUPPORTED_VIDEO_TYPES.some((type) => type === mimeType) || mimeType.startsWith("video/")) {
+      return extractVideoTranscript(ctx, {
+        storageId,
+        filename,
+        bytes,
+        mimeType,
+        organizationId: args.organizationId,
+      });
+    }
+
     if (mimeType.toLowerCase().includes("pdf")) {
         return extractPdfText(url, mimeType, filename, args.organizationId, ctx);
         }
     if (mimeType.toLowerCase().includes("text")) {
     return extractTextFileContent(ctx, storageId, bytes, mimeType, args.organizationId);
+    }
+
+    // Some browsers may provide a generic MIME type; fall back to filename extension.
+    const lowerName = filename.toLowerCase();
+    if (
+      lowerName.endsWith(".jpg") ||
+      lowerName.endsWith(".jpeg") ||
+      lowerName.endsWith(".png") ||
+      lowerName.endsWith(".webp") ||
+      lowerName.endsWith(".gif")
+    ) {
+      return extractImageText(url, args.organizationId, ctx);
+    }
+    if (
+      lowerName.endsWith(".mp4") ||
+      lowerName.endsWith(".webm") ||
+      lowerName.endsWith(".mov")
+    ) {
+      return extractVideoTranscript(ctx, {
+        storageId,
+        filename,
+        bytes,
+        mimeType: mimeType || "video/mp4",
+        organizationId: args.organizationId,
+      });
     }
 
     throw new Error(`Unsupported MIME type: ${mimeType}`);
@@ -58,6 +102,74 @@ export async function extractTextContent(
 
 
     };
+
+async function extractVideoTranscript(
+  ctx: { storage: StorageActionWriter; runMutation?: any },
+  args: {
+    storageId: Id<"_storage">;
+    filename: string;
+    bytes?: ArrayBuffer;
+    mimeType: string;
+    organizationId?: string;
+  },
+): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not configured. Add it to enable Whisper transcription.");
+  }
+
+  const arrayBuffer =
+    args.bytes || (await (await ctx.storage.get(args.storageId))?.arrayBuffer());
+
+  if (!arrayBuffer) {
+    throw new Error("Failed to get file content");
+  }
+
+  if (arrayBuffer.byteLength > MAX_WHISPER_BYTES) {
+    throw new Error(
+      `Video is too large for Whisper transcription (max ${(MAX_WHISPER_BYTES / (1024 * 1024)).toFixed(0)}MB). Please compress or upload a shorter clip.`,
+    );
+  }
+
+  const blob = new Blob([arrayBuffer], {
+    type: args.mimeType || "application/octet-stream",
+  });
+
+  const form = new FormData();
+  form.append("file", blob, args.filename);
+  form.append("model", "whisper-1");
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(
+      `Whisper transcription failed (${response.status} ${response.statusText})${errorText ? `: ${errorText}` : ""}`,
+    );
+  }
+
+  const json = (await response.json()) as { text?: unknown };
+  const transcript = typeof json?.text === "string" ? json.text : "";
+
+  const totalTokens = Math.ceil(transcript.length / 4);
+  if (args.organizationId && ctx.runMutation && totalTokens > 0) {
+    await ctx.runMutation((internal as any).system.tokenUsage.record, {
+      organizationId: args.organizationId,
+      provider: "openai",
+      model: "whisper-1",
+      kind: "extract_video_transcript",
+      totalTokens,
+    });
+  }
+
+  return transcript;
+}
 
     async function extractTextFileContent(
   ctx: { storage: StorageActionWriter; runMutation?: any },

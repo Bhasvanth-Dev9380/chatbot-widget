@@ -33,12 +33,14 @@ export default defineSchema({
     name: v.string(),
     email: v.string(),
     authId: v.string(),
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
   }).index("by_organization_id", ["organizationId"]),
 
   /* ───────── CHATBOTS ───────── */
   chatbots: defineTable({
-    organizationId: v.string(),
+    entityId: v.optional(v.string()),
+    organizationId: v.optional(v.string()),
     name: v.string(),
     description: v.optional(v.string()),
     knowledgeBaseId: v.optional(v.id("knowledgeBases")),
@@ -74,6 +76,7 @@ export default defineSchema({
 
   /* ───────── KNOWLEDGE BASES ───────── */
   knowledgeBases: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -93,6 +96,7 @@ export default defineSchema({
 
   /* ───────── WIDGET SETTINGS ───────── */
   widgetSettings: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     greetMessage: v.string(),
     defaultSuggestions: v.object({
@@ -112,6 +116,7 @@ export default defineSchema({
 
   /* ───────── PLUGINS ───────── */
   plugins: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
     secretName: v.string(),
@@ -122,6 +127,7 @@ export default defineSchema({
   /* ───────── CONVERSATIONS ───────── */
   conversations: defineTable({
     threadId: v.string(),
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.id("chatbots")),
@@ -148,6 +154,7 @@ export default defineSchema({
   contactSessions: defineTable({
     name: v.string(),
     email: v.string(),
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     expiresAt: v.number(),
     metadata: v.optional(
@@ -172,6 +179,7 @@ export default defineSchema({
 
   /* ───────── NOTIFICATIONS ───────── */
   notifications: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     type: v.union(
       v.literal("file_ready"),
@@ -191,6 +199,7 @@ export default defineSchema({
 
   /* ───────── FILE CHANGE TRACKER ───────── */
   fileChangeTracker: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     knowledgeBaseId: v.optional(v.string()),
     lastChange: v.number(),
@@ -201,6 +210,7 @@ export default defineSchema({
 
   /* ───────── DELETED FILES (TOMBSTONES) ───────── */
   deletedFiles: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     knowledgeBaseId: v.optional(v.string()),
     storageId: v.id("_storage"),
@@ -212,6 +222,7 @@ export default defineSchema({
 
   /* ───────── VOICE TRANSCRIPTS ───────── */
   voiceTranscripts: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     conversationId: v.optional(v.id("conversations")),
     contactSessionId: v.id("contactSessions"),
@@ -245,6 +256,7 @@ export default defineSchema({
     .index("by_conversation_id", ["conversationId"]),
 
   beyondPresenceLanguageAgents: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     baseAgentId: v.string(),
     language: v.string(),
@@ -255,6 +267,7 @@ export default defineSchema({
     .index("by_agent_id", ["agentId"]),
 
   tokenUsageEvents: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     provider: v.string(),
     model: v.optional(v.string()),
@@ -268,6 +281,7 @@ export default defineSchema({
     .index("by_org_and_created_at", ["organizationId", "createdAt"]),
 
   tokenUsageDaily: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     dayStart: v.number(),
     provider: v.string(),
@@ -279,6 +293,7 @@ export default defineSchema({
     .index("by_org_day_provider", ["organizationId", "dayStart", "provider"]),
 
   convexUsageEstimatedDaily: defineTable({
+    entityId: v.optional(v.string()),
     organizationId: v.string(),
     dayStart: v.number(),
     databaseBytes: v.number(),
