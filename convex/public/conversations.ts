@@ -1,10 +1,37 @@
-import { mutation, query } from "../_generated/server";
+import { action, internalMutation, mutation, query } from "../_generated/server";
 import { ConvexError, v } from "convex/values";
 import { supportAgent } from "../system/ai/agents/supportAgent";
-import { components, internal } from "../_generated/api";
+import { api, components, internal } from "../_generated/api";
 import { MessageDoc, saveMessage } from "@convex-dev/agent";
 import { paginationOptsValidator } from "convex/server";
+
 import { generateCaseId } from "../lib/generateCaseId";
+
+export const insertConversationInternal = internalMutation({
+  args: {
+    contactSessionId: v.id("contactSessions"),
+    organizationId: v.string(),
+    threadId: v.string(),
+    caseId: v.string(),
+    chatbotId: v.optional(v.id("chatbots")),
+    kind: v.optional(
+      v.union(v.literal("chat"), v.literal("voice"), v.literal("video")),
+    ),
+    isTranscriptPending: v.optional(v.boolean()),
+  },
+  handler: async (ctx: any, args: any) => {
+    return await ctx.db.insert("conversations", {
+      contactSessionId: args.contactSessionId,
+      status: "unresolved",
+      organizationId: args.organizationId,
+      threadId: args.threadId,
+      caseId: args.caseId,
+      chatbotId: args.chatbotId,
+      kind: args.kind,
+      isTranscriptPending: args.isTranscriptPending,
+    });
+  },
+});
 
 /* -------------------------------------------------
    GET MANY (with lastMessage)
@@ -138,7 +165,7 @@ export const getOne = query({
 /* -------------------------------------------------
    CREATE CONVERSATION
 ------------------------------------------------- */
-export const create = mutation({
+export const create: any = action({
   args: {
     organizationId: v.string(),
     contactSessionId: v.id("contactSessions"),
@@ -148,8 +175,10 @@ export const create = mutation({
     ),
     isTranscriptPending: v.optional(v.boolean()),
   },
-  handler: async (ctx, args) => {
-    const session = await ctx.db.get(args.contactSessionId);
+  handler: async (ctx: any, args: any): Promise<any> => {
+    const session: any = await ctx.runQuery((internal as any).system.contactSessions.getOne, {
+      contactSessionId: args.contactSessionId,
+    });
 
     if (!session || session.expiresAt < Date.now()) {
       throw new ConvexError({
@@ -166,27 +195,24 @@ export const create = mutation({
     }
 
     // 🔄 Refresh session like reference
-    await ctx.runMutation(internal.system.contactSessions.refresh, {
+    await ctx.runMutation((internal as any).system.contactSessions.refresh, {
       contactSessionId: args.contactSessionId,
     });
 
     // Fetch widget settings (fallback behavior)
-    const widgetSettings = await ctx.db
-      .query("widgetSettings")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
-      )
-      .unique();
+    const widgetSettings: any = await ctx.runQuery(
+      (internal as any).system.widgetSettings.getByOrganizationId,
+      { organizationId: args.organizationId },
+    );
 
-    let chatbot = null;
+    let chatbot: any = null;
     let greetMessage = "Hello, how can I help you?";
 
     // 1️⃣ Explicit chatbotId (string) - look up by chatbotId field
     if (args.chatbotId) {
-      chatbot = await ctx.db
-        .query("chatbots")
-        .withIndex("by_chatbot_id", (q) => q.eq("chatbotId", args.chatbotId))
-        .unique();
+      chatbot = await ctx.runQuery((internal as any).system.chatbots.getByChatbotId, {
+        chatbotId: args.chatbotId,
+      });
       if (chatbot && chatbot.organizationId === args.organizationId) {
         greetMessage = chatbot.greetMessage;
       } else {
@@ -195,20 +221,22 @@ export const create = mutation({
     }
     // 2️⃣ Widget-selected chatbot
     if (!chatbot && widgetSettings?.selectedChatbotId) {
-      chatbot = await ctx.db.get(widgetSettings.selectedChatbotId);
+      chatbot = await ctx.runQuery((internal as any).system.chatbots.getById, {
+        id: widgetSettings.selectedChatbotId,
+      });
       if (chatbot) {
         greetMessage = chatbot.greetMessage;
       }
     }
     // 3️⃣ Default chatbot
     if (!chatbot) {
-      chatbot = await ctx.db
-        .query("chatbots")
-        .withIndex("by_organization_id", (q) =>
-          q.eq("organizationId", args.organizationId),
-        )
-        .filter((q) => q.eq(q.field("isDefault"), true))
-        .first();
+      const orgChatbots: any = await ctx.runQuery((internal as any).system.chatbots.getByOrganizationId, {
+        organizationId: args.organizationId,
+      });
+
+      chatbot = Array.isArray(orgChatbots)
+        ? orgChatbots.find((c) => (c as any).isDefault === true) ?? null
+        : null;
 
       if (chatbot) {
         greetMessage = chatbot.greetMessage;
@@ -231,19 +259,129 @@ export const create = mutation({
       },
     });
 
-    // 🆔 Case ID (shared util — same as reference)
-    const caseId = generateCaseId();
+    const contactLabel = session.name
+      ? `${session.name}${session.email ? ` (${session.email})` : ""}`
+      : session.email
+        ? session.email
+        : "Website visitor";
 
-    const conversationId = await ctx.db.insert("conversations", {
-      contactSessionId: session._id,
-      status: "unresolved",
+    const subject = chatbot?.name
+      ? `Chatbot conversation (${chatbot.name}) - ${contactLabel}`
+      : `Chatbot conversation - ${contactLabel}`;
+
+    const caseDescription = [
+      "Created via Spinabot chatbot.",
+      chatbot?.name ? `Chatbot name: ${chatbot.name}` : null,
+      args.chatbotId ? `Chatbot public id: ${args.chatbotId}` : null,
+      chatbot?._id ? `Chatbot doc id: ${String(chatbot._id)}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const caseCommentBody = [
+      "Conversation created.",
+      chatbot?.name ? `Chatbot name: ${chatbot.name}` : null,
+      args.chatbotId ? `Chatbot public id: ${args.chatbotId}` : null,
+      chatbot?._id ? `Chatbot doc id: ${String(chatbot._id)}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    console.log("[conversations.create] Creating Salesforce case", {
       organizationId: args.organizationId,
-      threadId,
-      caseId,
-      chatbotId: chatbot?._id ?? undefined,
-      kind: args.kind,
-      isTranscriptPending: args.isTranscriptPending,
+      subject,
     });
+
+    let caseId: string = generateCaseId();
+    try {
+      const sf = await ctx.runAction(api.private.salesforce.createCase, {
+        organizationId: args.organizationId,
+        subject,
+        status: "New",
+        origin: "Web",
+        contactName: session.name,
+        contactEmail: session.email,
+        description: caseDescription,
+        caseCommentBody,
+      });
+
+      console.log("[conversations.create] Salesforce createCase result", {
+        id: sf?.id ?? null,
+        caseNumber: sf?.caseNumber ?? null,
+        success: sf?.success ?? null,
+      });
+
+      caseId = (sf?.caseNumber || sf?.id) as string;
+      if (!caseId) {
+        throw new ConvexError({
+          code: "BAD_REQUEST",
+          message: "Salesforce case creation returned no case id",
+        });
+      }
+    } catch (error) {
+      console.error("[conversations.create] Salesforce case creation failed", error);
+
+      const messageFromError = (() => {
+        if (error instanceof ConvexError) {
+          const data: unknown = (error as any).data;
+          if (typeof data === "string" && data.trim()) return data;
+          if (data && typeof data === "object" && !Array.isArray(data)) {
+            const m = (data as any).message;
+            if (typeof m === "string" && m.trim()) return m;
+          }
+        }
+        if (error && typeof error === "object") {
+          const m = (error as any).message;
+          if (typeof m === "string" && m.trim()) return m;
+        }
+        return null;
+      })();
+
+      console.error("[conversations.create] Falling back to generated caseId", {
+        organizationId: args.organizationId,
+        message: messageFromError ?? null,
+      });
+
+      caseId = generateCaseId();
+    }
+
+    try {
+      await ctx.runAction(api.private.salesforce.addInternalCaseComment, {
+        organizationId: args.organizationId,
+        caseNumberOrId: caseId,
+        commentBody: `Assistant: ${String(greetMessage ?? "")}`.trim(),
+      });
+    } catch (error) {
+      console.error(
+        "[conversations.create] Failed to post Salesforce internal case comment (greet)",
+        error,
+      );
+    }
+
+    const conversationId: any = await ctx.runMutation(
+      (internal as any).public.conversations.insertConversationInternal,
+      {
+        contactSessionId: session._id,
+        organizationId: args.organizationId,
+        threadId,
+        caseId,
+        chatbotId: chatbot?._id ?? undefined,
+        kind: args.kind,
+        isTranscriptPending: args.isTranscriptPending,
+      },
+    );
+
+    try {
+      await ctx.runAction(api.private.salesforce.sendWebhookEvent, {
+        organizationId: args.organizationId,
+        event: "case.created",
+        conversationId: String(conversationId),
+        threadId,
+        caseId,
+      });
+    } catch (error) {
+      console.error("[conversations.create] Failed to send webhook", error);
+    }
 
     return conversationId;
   },

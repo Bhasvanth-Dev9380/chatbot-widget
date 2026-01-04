@@ -12,7 +12,7 @@ export const resolveConversation = createTool({
       return "Missing thread ID";
     }
 
-    await ctx.runMutation(internal.system.conversations.resolve, {
+    await ctx.runAction(internal.system.conversations.resolve, {
       threadId: ctx.threadId,
     });
 

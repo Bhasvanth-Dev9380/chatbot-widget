@@ -4,11 +4,12 @@ import { supportAgent } from "../system/ai/agents/supportAgent";
 import { MessageDoc } from "@convex-dev/agent";
 import { paginationOptsValidator, PaginationResult } from "convex/server";
 import { Doc } from "../_generated/dataModel";
+import { internal, api } from "../_generated/api";
 
 /* -------------------------------------------------
    UPDATE STATUS
 ------------------------------------------------- */
-export const updateStatus = mutation({
+export const updateStatusInternal = mutation({
   args: {
     conversationId: v.id("conversations"),
     status: v.union(
@@ -37,6 +38,51 @@ export const updateStatus = mutation({
 
     await ctx.db.patch(args.conversationId, {
       status: args.status,
+    });
+  },
+});
+
+export const updateStatus = action({
+  args: {
+    conversationId: v.id("conversations"),
+    status: v.union(
+      v.literal("unresolved"),
+      v.literal("escalated"),
+      v.literal("resolved"),
+    ),
+    organizationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (args.status === "escalated") {
+      const conversation = await ctx.runQuery(api.private.conversations.getOne, {
+        conversationId: args.conversationId,
+        organizationId: args.organizationId,
+      });
+
+      await ctx.runAction(internal.system.conversations.escalate, {
+        threadId: conversation.threadId,
+      });
+
+      return;
+    }
+
+    if (args.status === "resolved") {
+      const conversation = await ctx.runQuery(api.private.conversations.getOne, {
+        conversationId: args.conversationId,
+        organizationId: args.organizationId,
+      });
+
+      await ctx.runAction(internal.system.conversations.resolve, {
+        threadId: conversation.threadId,
+      });
+
+      return;
+    }
+
+    await ctx.runMutation(api.private.conversations.updateStatusInternal, {
+      conversationId: args.conversationId,
+      status: args.status,
+      organizationId: args.organizationId,
     });
   },
 });

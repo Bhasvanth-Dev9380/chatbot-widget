@@ -14,7 +14,7 @@ import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { chatbotIdAtom, conversationIdAtom, screenAtom, organizationIdAtom, contactSessionIdAtomFamily } from "../../atoms/widget-atoms";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +38,7 @@ export const WidgetVoiceScreen = () => {
     contactSessionIdAtomFamily(organizationId || "")
   );
 
-  const createConversation = useMutation(api.public.conversations.create);
+  const createConversation = useAction((api as any).public.conversations.create);
   const [shouldStartCall, setShouldStartCall] = useState(false);
 
   const conversation = useQuery(

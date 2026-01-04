@@ -3,7 +3,11 @@ import { internalMutation, internalQuery } from "../_generated/server";
 
 export const upsert = internalMutation({
   args: {
-    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+    ),
     secretName: v.string(),
     organizationId: v.string(),
   },
@@ -15,26 +19,29 @@ export const upsert = internalMutation({
       )
       .unique();
 
-      if (existingPlugin) {
-  await ctx.db.patch(existingPlugin._id, {
-    service: args.service,
-    secretName: args.secretName,
-  });
-} else {
-  await ctx.db.insert("plugins", {
-    organizationId: args.organizationId,
-    service: args.service,
-    secretName: args.secretName,
-  });
-}
-
+    if (existingPlugin) {
+      await ctx.db.patch(existingPlugin._id, {
+        service: args.service,
+        secretName: args.secretName,
+      });
+    } else {
+      await ctx.db.insert("plugins", {
+        organizationId: args.organizationId,
+        service: args.service,
+        secretName: args.secretName,
+      });
+    }
   },
 });
 
 export const getByOrganizationIdAndService = internalQuery({
   args: {
     organizationId: v.string(),
-    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+    ),
   },
   handler: async (ctx, args) => {
     return await ctx.db

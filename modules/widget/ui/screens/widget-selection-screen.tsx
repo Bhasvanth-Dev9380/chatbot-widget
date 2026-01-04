@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ChevronRightIcon, MessageSquareTextIcon,MicIcon, PhoneIcon, VideoIcon } from "lucide-react";
 import { useSetAtom, useAtomValue, useAtom } from "jotai";
 import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom, videoCallLanguageAtomFamily} from"../../atoms/widget-atoms";
-import {useMutation} from "convex/react";
+import { useAction } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useEffect, useState } from "react";
 import { WidgetFooter } from "../components/widget-footer";
@@ -77,7 +77,7 @@ export const WidgetSelectionScreen = () => {
     contactSessionIdAtomFamily(organizationId || "")
   );
 
-  const createConversation = useMutation(api.public.conversations.create);
+  const createConversation = useAction((api as any).public.conversations.create);
   const [isPending, setIsPending] = useState(false);
   const [isLanguageDialogOpen, setIsLanguageDialogOpen] = useState(false);
 

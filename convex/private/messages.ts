@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { supportAgent } from "../system/ai/agents/supportAgent";
 import { paginationOptsValidator } from "convex/server";
 import { saveMessage } from "@convex-dev/agent";
-import { components, internal } from "../_generated/api";
+import { api, components, internal } from "../_generated/api";
 import { openai } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { OPERATOR_MESSAGE_ENHANCEMENT_PROMPT } from "../system/ai/constants";
@@ -58,9 +58,27 @@ export const enhanceResponse = action({
 });
 
 /* -------------------------------------------------
-   CREATE OPERATOR MESSAGE
+  CREATE OPERATOR MESSAGE
 ------------------------------------------------- */
-export const create = mutation({
+export const saveOperatorMessageInternal = mutation({
+  args: {
+    threadId: v.string(),
+    prompt: v.string(),
+    agentName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await saveMessage(ctx, components.agent, {
+      threadId: args.threadId,
+      agentName: args.agentName,
+      message: {
+        role: "assistant",
+        content: args.prompt,
+      },
+    });
+  },
+});
+
+export const create = action({
   args: {
     prompt: v.string(),
     conversationId: v.id("conversations"),
@@ -68,21 +86,10 @@ export const create = mutation({
     agentName: v.string(),      // operator display name
   },
   handler: async (ctx, args) => {
-    const conversation = await ctx.db.get(args.conversationId);
-
-    if (!conversation) {
-      throw new ConvexError({
-        code: "NOT_FOUND",
-        message: "Conversation not found",
-      });
-    }
-
-    if (conversation.organizationId !== args.organizationId) {
-      throw new ConvexError({
-        code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
-      });
-    }
+    const conversation = await ctx.runQuery(api.private.conversations.getOne, {
+      conversationId: args.conversationId,
+      organizationId: args.organizationId,
+    });
 
     if (conversation.status === "resolved") {
       throw new ConvexError({
@@ -91,21 +98,32 @@ export const create = mutation({
       });
     }
 
-    // Auto-escalate unresolved → escalated
     if (conversation.status === "unresolved") {
-      await ctx.db.patch(args.conversationId, {
-        status: "escalated",
+      await ctx.runAction(internal.system.conversations.escalate, {
+        threadId: conversation.threadId,
       });
     }
 
-    await saveMessage(ctx, components.agent, {
+    await ctx.runMutation(api.private.messages.saveOperatorMessageInternal, {
       threadId: conversation.threadId,
       agentName: args.agentName,
-      message: {
-        role: "assistant",
-        content: args.prompt,
-      },
+      prompt: args.prompt,
     });
+
+    try {
+      if (conversation.caseId) {
+        await ctx.runAction(api.private.salesforce.addInternalCaseComment, {
+          organizationId: args.organizationId,
+          caseNumberOrId: conversation.caseId,
+          commentBody: `${`Agent (${args.agentName}):`} ${String(args.prompt ?? "")}`.trim(),
+        });
+      }
+    } catch (error) {
+      console.error(
+        "[private.messages.create] Failed to post Salesforce internal case comment",
+        error,
+      );
+    }
   },
 });
 
