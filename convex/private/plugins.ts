@@ -3,7 +3,11 @@ import { mutation, query } from "../_generated/server";
 
 export const remove = mutation({
   args: {
-    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+    ),
     // ✅ orgId now comes from the client (BetterAuth → Convex user)
     organizationId: v.string(),
   },
@@ -30,7 +34,11 @@ export const remove = mutation({
 
 export const getOne = query({
   args: {
-    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+    ),
     // ✅ orgId from client
     organizationId: v.string(),
   },

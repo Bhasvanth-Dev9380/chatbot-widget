@@ -1,6 +1,6 @@
 import { v, ConvexError } from "convex/values";
 import { action, query } from "../_generated/server";
-import { components, internal } from "../_generated/api";
+import { api, components, internal } from "../_generated/api";
 import { supportAgent } from "../system/ai/agents/supportAgent";
 import { paginationOptsValidator } from "convex/server";
 import { saveMessage } from "@convex-dev/agent";
@@ -8,6 +8,41 @@ import { search } from "../system/ai/tools/search";
 import { resolveConversation } from "../system/ai/tools/resolveConversation";
 import { escalateConversation } from "../system/ai/tools/escalateConversation";
 import { createCustomAgentPrompt } from "../system/ai/constants";
+
+function toSalesforceCommentBody(prefix: string, text: string) {
+  const maxLen = 3900;
+  const body = `${prefix}${prefix ? " " : ""}${String(text ?? "")}`.trim();
+  if (body.length <= maxLen) return body;
+  return `${body.slice(0, maxLen - 1)}…`;
+}
+
+function customerPrefixFromSession(session: any) {
+  const name = String(session?.name ?? "").trim();
+  const email = String(session?.email ?? "").trim();
+  const parts: string[] = [];
+  if (name) parts.push(name);
+  if (email) parts.push(email);
+  return parts.length > 0 ? `Customer (${parts.join(" - ")}):` : "Customer:";
+}
+
+async function tryPostInternalCaseComment(
+  ctx: any,
+  conversation: any,
+  commentBody: string,
+) {
+  try {
+    const caseNumberOrId = conversation?.caseId;
+    if (!caseNumberOrId) return;
+
+    await ctx.runAction(api.private.salesforce.addInternalCaseComment, {
+      organizationId: conversation.organizationId,
+      caseNumberOrId,
+      commentBody,
+    });
+  } catch (error) {
+    console.error("[messages] Failed to post Salesforce internal case comment", error);
+  }
+}
 
 /* -------------------------------------------------
    CREATE MESSAGE (WIDGET → AGENT)
@@ -59,6 +94,17 @@ export const createFromTranscript = action({
         content: args.text,
       },
     });
+
+    await tryPostInternalCaseComment(
+      ctx,
+      conversation,
+      toSalesforceCommentBody(
+        args.role === "user"
+          ? customerPrefixFromSession(contactSession)
+          : "Assistant:",
+        args.text,
+      ),
+    );
 
     // ✅ If this is a transcript conversation, make it visible once transcript starts.
     const text = String(args.text ?? "");
@@ -112,6 +158,12 @@ export const create = action({
     },
   });
 
+  await tryPostInternalCaseComment(
+    ctx,
+    conversation,
+    toSalesforceCommentBody(customerPrefixFromSession(contactSession), args.prompt),
+  );
+
   // Stop here. No agent, no tools, no fallback AI.
   return;
 }
@@ -144,6 +196,12 @@ export const create = action({
     try {
       console.log("🚀 Starting agent generateText for threadId:", args.threadId);
       console.log("📝 User prompt:", args.prompt);
+
+      await tryPostInternalCaseComment(
+        ctx,
+        conversation,
+        toSalesforceCommentBody(customerPrefixFromSession(contactSession), args.prompt),
+      );
 
       if (customPrompt) {
         const { Agent } = await import("@convex-dev/agent");
@@ -194,6 +252,15 @@ export const create = action({
         }
         console.log("✅ Custom agent completed. Result:", JSON.stringify(result, null, 2));
 
+        const assistantText = (result as any)?.text;
+        if (typeof assistantText === "string" && assistantText.trim()) {
+          await tryPostInternalCaseComment(
+            ctx,
+            conversation,
+            toSalesforceCommentBody("Assistant:", assistantText),
+          );
+        }
+
         // Check if agent ended with tool calls instead of text
         const lastStep = result.steps[result.steps.length - 1];
         if (lastStep.finishReason === "tool-calls") {
@@ -210,6 +277,12 @@ export const create = action({
                 content: String(toolResult.output),
               },
             });
+
+            await tryPostInternalCaseComment(
+              ctx,
+              conversation,
+              toSalesforceCommentBody("Assistant:", String(toolResult.output)),
+            );
           } else {
             console.error("❌ No tool result found to save for custom agent");
           }
@@ -249,6 +322,15 @@ export const create = action({
         }
         console.log("✅ Support agent completed. Result:", JSON.stringify(result, null, 2));
 
+        const assistantText = (result as any)?.text;
+        if (typeof assistantText === "string" && assistantText.trim()) {
+          await tryPostInternalCaseComment(
+            ctx,
+            conversation,
+            toSalesforceCommentBody("Assistant:", assistantText),
+          );
+        }
+
         // Check if agent ended with tool calls instead of text
         const lastStep = result.steps[result.steps.length - 1];
         if (lastStep.finishReason === "tool-calls") {
@@ -265,6 +347,12 @@ export const create = action({
                 content: String(toolResult.output),
               },
             });
+
+            await tryPostInternalCaseComment(
+              ctx,
+              conversation,
+              toSalesforceCommentBody("Assistant:", String(toolResult.output)),
+            );
           } else {
             console.error("❌ No tool result found to save");
           }
@@ -293,6 +381,12 @@ export const create = action({
         },
       });
 
+      await tryPostInternalCaseComment(
+        ctx,
+        conversation,
+        toSalesforceCommentBody(customerPrefixFromSession(contactSession), args.prompt),
+      );
+
       // Save fallback assistant response (CRITICAL)
       await saveMessage(ctx, components.agent, {
         threadId: args.threadId,
@@ -302,6 +396,15 @@ export const create = action({
             "Sorry — something went wrong on my side. Please try again.",
         },
       });
+
+      await tryPostInternalCaseComment(
+        ctx,
+        conversation,
+        toSalesforceCommentBody(
+          "Assistant:",
+          "Sorry — something went wrong on my side. Please try again.",
+        ),
+      );
 
       return;
     }

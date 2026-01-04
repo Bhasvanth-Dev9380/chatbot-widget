@@ -13,7 +13,7 @@ export const escalateConversation = createTool({
       return "Missing thread ID";
     }
 
-    await ctx.runMutation(internal.system.conversations.escalate, {
+    await ctx.runAction(internal.system.conversations.escalate, {
       threadId: ctx.threadId,
     });
 

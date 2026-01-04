@@ -118,7 +118,11 @@ export default defineSchema({
   plugins: defineTable({
     entityId: v.optional(v.string()),
     organizationId: v.string(),
-    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+    ),
     secretName: v.string(),
   })
     .index("by_organization_id", ["organizationId"])

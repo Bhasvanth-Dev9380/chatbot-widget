@@ -4,7 +4,11 @@ import { internal } from "../_generated/api";
 
 export const upsert = action({
   args: {
-    service: v.union(v.literal("vapi"), v.literal("beyond_presence")),
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+    ),
     value: v.any(),
     // ✅ orgId from client
     organizationId: v.string(),
@@ -14,7 +18,7 @@ export const upsert = action({
 
     // Run synchronously so the plugin is created immediately
     await ctx.runAction(internal.system.secrets.upsert, {
-      service: args.service,
+      service: args.service as any,
       organizationId: orgId,
       value: args.value,
     });
