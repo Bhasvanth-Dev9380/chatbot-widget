@@ -28,11 +28,11 @@ const deriveSolidPrimary = (primary: string) => {
 };
 
 interface Props {
-  organizationId: string;
+  entityId: string;
   chatbotId?: string;
 };
 
-export const WidgetView = ({ organizationId, chatbotId }: Props) => {
+export const WidgetView = ({ entityId, chatbotId }: Props) => {
 
   const screen = useAtomValue(screenAtom);
   const setScreen = useSetAtom(screenAtom);
@@ -40,7 +40,7 @@ export const WidgetView = ({ organizationId, chatbotId }: Props) => {
 
   const [previewPrimaryColor, setPreviewPrimaryColor] = useState<string | null>(null);
 
-  const appearanceCacheKey = `echo_widget_appearance_cache:${organizationId}:${chatbotId ?? ""}`;
+  const appearanceCacheKey = `echo_widget_appearance_cache:${entityId}:${chatbotId ?? ""}`;
 
   useEffect(() => {
     try {
@@ -171,7 +171,7 @@ export const WidgetView = ({ organizationId, chatbotId }: Props) => {
 
   const screenComponents = {
     error: <WidgetErrorScreen />,
-    loading: <WidgetLoadingScreen organizationId={organizationId} chatbotId={chatbotId} />,
+    loading: <WidgetLoadingScreen entityId={entityId} chatbotId={chatbotId} />,
     auth: <WidgetAuthScreen />,
       voice: <WidgetVoiceScreen />,
       avatar: <WidgetAvatarScreen />,

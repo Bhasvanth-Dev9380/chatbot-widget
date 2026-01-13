@@ -37,7 +37,7 @@ export type ExtractTextContentArgs = {
   filename: string;
   bytes?: ArrayBuffer;
   mimeType: string;
-  organizationId?: string;
+  entityId?: string;
 };
 
 
@@ -51,7 +51,7 @@ export async function extractTextContent(
     assert(url, "Failed to get storage URL");
 
     if (SUPPORTED_IMAGE_TYPES.some((type) => type === mimeType)) {
-        return extractImageText(url, args.organizationId, ctx);
+        return extractImageText(url, args.entityId, ctx);
     }
 
     if (SUPPORTED_VIDEO_TYPES.some((type) => type === mimeType) || mimeType.startsWith("video/")) {
@@ -60,15 +60,15 @@ export async function extractTextContent(
         filename,
         bytes,
         mimeType,
-        organizationId: args.organizationId,
+        entityId: args.entityId,
       });
     }
 
     if (mimeType.toLowerCase().includes("pdf")) {
-        return extractPdfText(url, mimeType, filename, args.organizationId, ctx);
+        return extractPdfText(url, mimeType, filename, args.entityId, ctx);
         }
     if (mimeType.toLowerCase().includes("text")) {
-    return extractTextFileContent(ctx, storageId, bytes, mimeType, args.organizationId);
+    return extractTextFileContent(ctx, storageId, bytes, mimeType, args.entityId);
     }
 
     // Some browsers may provide a generic MIME type; fall back to filename extension.
@@ -80,7 +80,7 @@ export async function extractTextContent(
       lowerName.endsWith(".webp") ||
       lowerName.endsWith(".gif")
     ) {
-      return extractImageText(url, args.organizationId, ctx);
+      return extractImageText(url, args.entityId, ctx);
     }
     if (
       lowerName.endsWith(".mp4") ||
@@ -92,7 +92,7 @@ export async function extractTextContent(
         filename,
         bytes,
         mimeType: mimeType || "video/mp4",
-        organizationId: args.organizationId,
+        entityId: args.entityId,
       });
     }
 
@@ -110,7 +110,7 @@ async function extractVideoTranscript(
     filename: string;
     bytes?: ArrayBuffer;
     mimeType: string;
-    organizationId?: string;
+    entityId?: string;
   },
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -158,9 +158,9 @@ async function extractVideoTranscript(
   const transcript = typeof json?.text === "string" ? json.text : "";
 
   const totalTokens = Math.ceil(transcript.length / 4);
-  if (args.organizationId && ctx.runMutation && totalTokens > 0) {
+  if (args.entityId && ctx.runMutation && totalTokens > 0) {
     await ctx.runMutation((internal as any).system.tokenUsage.record, {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       provider: "openai",
       model: "whisper-1",
       kind: "extract_video_transcript",
@@ -176,7 +176,7 @@ async function extractVideoTranscript(
   storageId: Id<"_storage">,
   bytes: ArrayBuffer | undefined,
   mimeType: string,
-  organizationId: string | undefined
+  entityId: string | undefined
 ): Promise<string> {
   const arrayBuffer =
     bytes || (await (await ctx.storage.get(storageId))?.arrayBuffer());
@@ -210,9 +210,9 @@ async function extractVideoTranscript(
       ? usage.totalTokens
       : Math.ceil(String(result?.text ?? "").length / 4);
 
-  if (organizationId && ctx.runMutation && totalTokens > 0) {
+  if (entityId && ctx.runMutation && totalTokens > 0) {
     await ctx.runMutation((internal as any).system.tokenUsage.record, {
-      organizationId,
+      entityId,
       provider: "openai",
       model: "gpt-4o-mini",
       kind: "extract_text_html",
@@ -236,7 +236,7 @@ async function extractPdfText(
   url: string,
   mimeType: string,
   filename: string,
-  organizationId: string | undefined,
+  entityId: string | undefined,
   ctx: { storage: StorageActionWriter; runMutation?: any },
 ): Promise<string> {
   const apiKey = process.env.LLAMAPARSE_API_KEY;
@@ -244,7 +244,7 @@ async function extractPdfText(
   // Check if LlamaParse is configured
   if (!apiKey) {
     console.warn(`[extractPdfText] LLAMAPARSE_API_KEY not configured, using GPT-4o-mini fallback for ${filename}`);
-    return extractPdfFallback(url, mimeType, filename, organizationId, ctx);
+    return extractPdfFallback(url, mimeType, filename, entityId, ctx);
   }
   
   try {
@@ -270,9 +270,9 @@ async function extractPdfText(
         ? "pdf_parse_pages"
         : "pdf_parse_text_length_fallback";
 
-    if (organizationId && ctx.runMutation && totalUnits > 0) {
+    if (entityId && ctx.runMutation && totalUnits > 0) {
       await ctx.runMutation((internal as any).system.tokenUsage.record, {
-        organizationId,
+        entityId,
         provider: "llamaparse",
         model: "llamaparse",
         kind,
@@ -342,7 +342,7 @@ async function extractPdfText(
     // For other errors, try GPT-4o-mini fallback
     console.log(`[extractPdfText] Falling back to GPT-4o-mini for ${filename}`);
     try {
-      return await extractPdfFallback(url, mimeType, filename, organizationId, ctx);
+      return await extractPdfFallback(url, mimeType, filename, entityId, ctx);
     } catch (fallbackError) {
       // Last resort: basic extraction
       console.error(`[extractPdfText] GPT-4o-mini fallback also failed:`, fallbackError);
@@ -689,7 +689,7 @@ async function extractPdfFallback(
   url: string,
   mimeType: string,
   filename: string,
-  organizationId: string | undefined,
+  entityId: string | undefined,
   ctx: { storage: StorageActionWriter; runMutation?: any },
 ): Promise<string> {
   console.log(`[extractPdfFallback] ========================================`);
@@ -731,9 +731,9 @@ async function extractPdfFallback(
           ? usage.totalTokens
           : Math.ceil(String(result?.text ?? "").length / 4);
 
-      if (organizationId && ctx.runMutation && totalTokens > 0) {
+      if (entityId && ctx.runMutation && totalTokens > 0) {
         await ctx.runMutation((internal as any).system.tokenUsage.record, {
-          organizationId,
+          entityId,
           provider: "openai",
           model: "gpt-4o-mini",
           kind: "extract_pdf_fallback",
@@ -794,7 +794,7 @@ async function extractPdfFallback(
 
 async function extractImageText(
   url: string,
-  organizationId: string | undefined,
+  entityId: string | undefined,
   ctx: { storage: StorageActionWriter; runMutation?: any },
 ): Promise<string> {
   const result = await generateText({
@@ -814,9 +814,9 @@ async function extractImageText(
       ? usage.totalTokens
       : Math.ceil(String(result?.text ?? "").length / 4);
 
-  if (organizationId && ctx.runMutation && totalTokens > 0) {
+  if (entityId && ctx.runMutation && totalTokens > 0) {
     await ctx.runMutation((internal as any).system.tokenUsage.record, {
-      organizationId,
+      entityId,
       provider: "openai",
       model: "gpt-4o-mini",
       kind: "extract_image_text",

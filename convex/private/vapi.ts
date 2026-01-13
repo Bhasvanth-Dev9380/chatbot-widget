@@ -7,15 +7,15 @@ import { ConvexError, v } from "convex/values";
 export const getAssistants = action({
   args: {
     // ✅ orgId is now passed from the client (BetterAuth → Convex)
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: orgId,
+        entityId: orgId,
         service: "vapi",
       },
     );
@@ -61,15 +61,15 @@ export const getAssistants = action({
 export const getPhoneNumbers = action({
   args: {
     // ✅ orgId from client
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: orgId,
+        entityId: orgId,
         service: "vapi",
       },
     );

@@ -4,7 +4,7 @@ import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { Button } from "@/components/ui/button";
 import { ChevronRightIcon, MessageSquareTextIcon,MicIcon, PhoneIcon, VideoIcon } from "lucide-react";
 import { useSetAtom, useAtomValue, useAtom } from "jotai";
-import {chatbotIdAtom,contactSessionIdAtomFamily,organizationIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom, videoCallLanguageAtomFamily} from"../../atoms/widget-atoms";
+import {chatbotIdAtom,contactSessionIdAtomFamily,entityIdAtom,screenAtom,errorMessageAtom,conversationIdAtom, widgetSettingsAtom, hasVapiSecretsAtom, isVoiceConversationAtom, videoCallLanguageAtomFamily} from"../../atoms/widget-atoms";
 import { useAction } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useEffect, useState } from "react";
@@ -71,10 +71,10 @@ export const WidgetSelectionScreen = () => {
   );
 
   const setConversationId = useSetAtom(conversationIdAtom);
-  const organizationId = useAtomValue(organizationIdAtom);
+  const entityId = useAtomValue(entityIdAtom);
   const chatbotId = useAtomValue(chatbotIdAtom);
   const contactSessionId = useAtomValue(
-    contactSessionIdAtomFamily(organizationId || "")
+    contactSessionIdAtomFamily(entityId || "")
   );
 
   const createConversation = useAction((api as any).public.conversations.create);
@@ -101,9 +101,9 @@ export const WidgetSelectionScreen = () => {
   }, [widgetSettings?.appearance?.size]);
 
   const handleNewVideoConversation = async () => {
-    if (!organizationId) {
+    if (!entityId) {
       setScreen("error");
-      setErrorMessage("Organization ID is missing");
+      setErrorMessage("Entity ID is missing");
       return;
     }
 
@@ -117,9 +117,9 @@ export const WidgetSelectionScreen = () => {
   };
 
   const handleConfirmVideoLanguage = async () => {
-    if (!organizationId) {
+    if (!entityId) {
       setScreen("error");
-      setErrorMessage("Organization ID is missing");
+      setErrorMessage("Entity ID is missing");
       return;
     }
 
@@ -136,7 +136,7 @@ export const WidgetSelectionScreen = () => {
     try {
       const conversationId = await (createConversation as any)({
         contactSessionId,
-        organizationId,
+        entityId,
         chatbotId: chatbotId || undefined,
         kind: "video",
         isTranscriptPending: true,
@@ -153,9 +153,9 @@ export const WidgetSelectionScreen = () => {
 
 
   const handleNewVoiceConversation = async () => {
-    if (!organizationId) {
+    if (!entityId) {
       setScreen("error");
-      setErrorMessage("Organization ID is missing");
+      setErrorMessage("Entity ID is missing");
       return;
     }
 
@@ -174,9 +174,9 @@ export const WidgetSelectionScreen = () => {
 
   const handleNewConversation = async () => {
 
-     if (!organizationId) {
+     if (!entityId) {
       setScreen("error");
-      setErrorMessage("Organization ID is missing");
+      setErrorMessage("Entity ID is missing");
       return;
     }
 
@@ -192,7 +192,7 @@ export const WidgetSelectionScreen = () => {
     try {
       const conversationId = await createConversation({
         contactSessionId,
-        organizationId,
+        entityId,
         chatbotId: chatbotId || undefined,
       });
       setConversationId(conversationId);

@@ -11,7 +11,7 @@ import {
 ------------------------------------------------- */
 export const create = internalMutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     type: v.union(
       v.literal("file_ready"),
       v.literal("file_failed"),
@@ -24,11 +24,11 @@ export const create = internalMutation({
   },
   handler: async (ctx, args) => {
     console.log(
-      `[notifications.create] org=${args.organizationId}, type=${args.type}`,
+      `[notifications.create] org=${args.entityId}, type=${args.type}`,
     );
 
     await ctx.db.insert("notifications", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       type: args.type,
       title: args.title,
       message: args.message,
@@ -45,14 +45,14 @@ export const create = internalMutation({
 ------------------------------------------------- */
 export const list = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .order("desc")
       .take(args.limit ?? 50);
@@ -66,13 +66,13 @@ export const list = query({
 ------------------------------------------------- */
 export const getUnreadCount = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const unread = await ctx.db
       .query("notifications")
-      .withIndex("by_organization_id_and_read", (q) =>
-        q.eq("organizationId", args.organizationId).eq("read", false),
+      .withIndex("by_entity_id_and_read", (q) =>
+        q.eq("entityId", args.entityId).eq("read", false),
       )
       .collect();
 
@@ -85,7 +85,7 @@ export const getUnreadCount = query({
 ------------------------------------------------- */
 export const markAsRead = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     notificationId: v.id("notifications"),
   },
   handler: async (ctx, args) => {
@@ -98,7 +98,7 @@ export const markAsRead = mutation({
       });
     }
 
-    if (notification.organizationId !== args.organizationId) {
+    if (notification.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
@@ -114,13 +114,13 @@ export const markAsRead = mutation({
 ------------------------------------------------- */
 export const markAllAsRead = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const unread = await ctx.db
       .query("notifications")
-      .withIndex("by_organization_id_and_read", (q) =>
-        q.eq("organizationId", args.organizationId).eq("read", false),
+      .withIndex("by_entity_id_and_read", (q) =>
+        q.eq("entityId", args.entityId).eq("read", false),
       )
       .collect();
 
@@ -135,7 +135,7 @@ export const markAllAsRead = mutation({
 ------------------------------------------------- */
 export const deleteNotification = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     notificationId: v.id("notifications"),
   },
   handler: async (ctx, args) => {
@@ -148,7 +148,7 @@ export const deleteNotification = mutation({
       });
     }
 
-    if (notification.organizationId !== args.organizationId) {
+    if (notification.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
@@ -164,13 +164,13 @@ export const deleteNotification = mutation({
 ------------------------------------------------- */
 export const deleteAll = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const notifications = await ctx.db
       .query("notifications")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .collect();
 
@@ -187,14 +187,14 @@ export const deleteAll = mutation({
 ------------------------------------------------- */
 export const listByFileId = internalQuery({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     fileId: v.string(),
   },
   handler: async (ctx, args) => {
     return ctx.db
       .query("notifications")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .filter((q) => q.eq(q.field("fileId"), args.fileId))
       .collect();
@@ -206,14 +206,14 @@ export const listByFileId = internalQuery({
 ------------------------------------------------- */
 export const listByFileName = internalQuery({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     fileName: v.string(),
   },
   handler: async (ctx, args) => {
     return ctx.db
       .query("notifications")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .filter((q) => q.eq(q.field("fileName"), args.fileName))
       .collect();

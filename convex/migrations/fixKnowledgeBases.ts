@@ -9,7 +9,7 @@ export const fixKnowledgeBases = internalMutation({
 
       const ragNamespace =
         (kb as any).namespace ??
-        `${kb.organizationId}_${kb.knowledgeBaseId}`;
+        `${kb.entityId}_${kb.knowledgeBaseId}`;
 
       console.log(
         `[migration] fixing KB ${kb._id} → ragNamespace=${ragNamespace}`

@@ -10,9 +10,10 @@ import { generateCaseId } from "../lib/generateCaseId";
 export const insertConversationInternal = internalMutation({
   args: {
     contactSessionId: v.id("contactSessions"),
-    organizationId: v.string(),
+    entityId: v.string(),
     threadId: v.string(),
     caseId: v.string(),
+    zohoDeskTicketId: v.optional(v.string()),
     chatbotId: v.optional(v.id("chatbots")),
     kind: v.optional(
       v.union(v.literal("chat"), v.literal("voice"), v.literal("video")),
@@ -23,9 +24,10 @@ export const insertConversationInternal = internalMutation({
     return await ctx.db.insert("conversations", {
       contactSessionId: args.contactSessionId,
       status: "unresolved",
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       threadId: args.threadId,
       caseId: args.caseId,
+      zohoDeskTicketId: args.zohoDeskTicketId,
       chatbotId: args.chatbotId,
       kind: args.kind,
       isTranscriptPending: args.isTranscriptPending,
@@ -63,7 +65,7 @@ export const getMany = query({
         .unique();
 
       // If chatbotId is provided but invalid/wrong org, do not leak other bot conversations.
-      if (!chatbot || chatbot.organizationId !== session.organizationId) {
+      if (!chatbot || chatbot.entityId !== session.entityId) {
         return { page: [], isDone: true, continueCursor: "" };
       }
 
@@ -104,7 +106,7 @@ export const getMany = query({
           _id: conversation._id,
           _creationTime: conversation._creationTime,
           status: conversation.status,
-          organizationId: conversation.organizationId,
+          entityId: conversation.entityId,
           threadId: conversation.threadId,
           caseId: conversation.caseId,
           lastMessage,
@@ -167,7 +169,7 @@ export const getOne = query({
 ------------------------------------------------- */
 export const create: any = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.string()), // String chatbotId from embed snippet, NOT doc ID
     kind: v.optional(
@@ -187,10 +189,10 @@ export const create: any = action({
       });
     }
 
-    if (session.organizationId !== args.organizationId) {
+    if (session.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -201,8 +203,8 @@ export const create: any = action({
 
     // Fetch widget settings (fallback behavior)
     const widgetSettings: any = await ctx.runQuery(
-      (internal as any).system.widgetSettings.getByOrganizationId,
-      { organizationId: args.organizationId },
+      (internal as any).system.widgetSettings.getByEntityId,
+      { entityId: args.entityId },
     );
 
     let chatbot: any = null;
@@ -213,7 +215,7 @@ export const create: any = action({
       chatbot = await ctx.runQuery((internal as any).system.chatbots.getByChatbotId, {
         chatbotId: args.chatbotId,
       });
-      if (chatbot && chatbot.organizationId === args.organizationId) {
+      if (chatbot && chatbot.entityId === args.entityId) {
         greetMessage = chatbot.greetMessage;
       } else {
         chatbot = null; // Reset if not found or wrong org
@@ -230,8 +232,8 @@ export const create: any = action({
     }
     // 3️⃣ Default chatbot
     if (!chatbot) {
-      const orgChatbots: any = await ctx.runQuery((internal as any).system.chatbots.getByOrganizationId, {
-        organizationId: args.organizationId,
+      const orgChatbots: any = await ctx.runQuery((internal as any).system.chatbots.getByEntityId, {
+        entityId: args.entityId,
       });
 
       chatbot = Array.isArray(orgChatbots)
@@ -247,7 +249,7 @@ export const create: any = action({
 
     // 🧵 Create support thread
     const { threadId } = await supportAgent.createThread(ctx, {
-      userId: args.organizationId,
+      userId: args.entityId,
     });
 
     // 💬 Initial greet message
@@ -287,15 +289,37 @@ export const create: any = action({
       .filter(Boolean)
       .join("\n");
 
+    let zohoDeskTicketId: string | null = null;
+    try {
+      const zohoStatus = await ctx.runAction((api as any).private.zohoDesk.getConnectionStatus, {
+        entityId: args.entityId,
+      });
+      const zohoConnected = Boolean(zohoStatus?.connected);
+      if (zohoConnected) {
+        const z = await ctx.runAction((api as any).private.zohoDesk.createTicket, {
+          entityId: args.entityId,
+          subject,
+          description: caseDescription,
+          contactName: session.name,
+          contactEmail: session.email,
+        });
+        const id = typeof z?.id === "string" ? z.id : null;
+        zohoDeskTicketId = id && id.trim() ? id : null;
+      }
+    } catch (error) {
+      console.error("[conversations.create] Zoho Desk ticket creation failed", error);
+      zohoDeskTicketId = null;
+    }
+
     console.log("[conversations.create] Creating Salesforce case", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       subject,
     });
 
     let caseId: string = generateCaseId();
     try {
       const sf = await ctx.runAction(api.private.salesforce.createCase, {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         subject,
         status: "New",
         origin: "Web",
@@ -338,7 +362,7 @@ export const create: any = action({
       })();
 
       console.error("[conversations.create] Falling back to generated caseId", {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         message: messageFromError ?? null,
       });
 
@@ -347,7 +371,7 @@ export const create: any = action({
 
     try {
       await ctx.runAction(api.private.salesforce.addInternalCaseComment, {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         caseNumberOrId: caseId,
         commentBody: `Assistant: ${String(greetMessage ?? "")}`.trim(),
       });
@@ -358,13 +382,30 @@ export const create: any = action({
       );
     }
 
+    if (zohoDeskTicketId) {
+      try {
+        await ctx.runAction((api as any).private.zohoDesk.addTicketComment, {
+          entityId: args.entityId,
+          ticketId: zohoDeskTicketId,
+          commentBody: `Assistant: ${String(greetMessage ?? "")}`.trim(),
+          isPublic: false,
+        });
+      } catch (error) {
+        console.error(
+          "[conversations.create] Failed to post Zoho Desk ticket comment (greet)",
+          error,
+        );
+      }
+    }
+
     const conversationId: any = await ctx.runMutation(
       (internal as any).public.conversations.insertConversationInternal,
       {
         contactSessionId: session._id,
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         threadId,
         caseId,
+        zohoDeskTicketId: zohoDeskTicketId ?? undefined,
         chatbotId: chatbot?._id ?? undefined,
         kind: args.kind,
         isTranscriptPending: args.isTranscriptPending,
@@ -373,7 +414,7 @@ export const create: any = action({
 
     try {
       await ctx.runAction(api.private.salesforce.sendWebhookEvent, {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         event: "case.created",
         conversationId: String(conversationId),
         threadId,

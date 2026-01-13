@@ -17,7 +17,7 @@ export const updateStatusInternal = mutation({
       v.literal("escalated"),
       v.literal("resolved"),
     ),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
@@ -29,10 +29,10 @@ export const updateStatusInternal = mutation({
       });
     }
 
-    if (conversation.organizationId !== args.organizationId) {
+    if (conversation.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -50,13 +50,13 @@ export const updateStatus = action({
       v.literal("escalated"),
       v.literal("resolved"),
     ),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     if (args.status === "escalated") {
       const conversation = await ctx.runQuery(api.private.conversations.getOne, {
         conversationId: args.conversationId,
-        organizationId: args.organizationId,
+        entityId: args.entityId,
       });
 
       await ctx.runAction(internal.system.conversations.escalate, {
@@ -69,7 +69,7 @@ export const updateStatus = action({
     if (args.status === "resolved") {
       const conversation = await ctx.runQuery(api.private.conversations.getOne, {
         conversationId: args.conversationId,
-        organizationId: args.organizationId,
+        entityId: args.entityId,
       });
 
       await ctx.runAction(internal.system.conversations.resolve, {
@@ -82,7 +82,7 @@ export const updateStatus = action({
     await ctx.runMutation(api.private.conversations.updateStatusInternal, {
       conversationId: args.conversationId,
       status: args.status,
-      organizationId: args.organizationId,
+      entityId: args.entityId,
     });
   },
 });
@@ -93,7 +93,7 @@ export const updateStatus = action({
 export const getOne = query({
   args: {
     conversationId: v.id("conversations"),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
@@ -105,10 +105,10 @@ export const getOne = query({
       });
     }
 
-    if (conversation.organizationId !== args.organizationId) {
+    if (conversation.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -141,7 +141,7 @@ export const getMany = query({
       ),
     ),
     chatbotId: v.optional(v.id("chatbots")),
-    organizationId: v.string(),
+    entityId: v.string(),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -156,7 +156,7 @@ export const getMany = query({
           q.eq("chatbotId", args.chatbotId),
         )
         .filter((q) =>
-          q.eq(q.field("organizationId"), args.organizationId),
+          q.eq(q.field("entityId"), args.entityId),
         )
         .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
@@ -173,13 +173,13 @@ export const getMany = query({
     } else if (args.status) {
       conversations = await ctx.db
         .query("conversations")
-        .withIndex("by_status_and_organization_id", (q) =>
+        .withIndex("by_status_and_entity_id", (q) =>
           q
             .eq(
               "status",
               args.status as Doc<"conversations">["status"],
             )
-            .eq("organizationId", args.organizationId),
+            .eq("entityId", args.entityId),
         )
         .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
@@ -187,8 +187,8 @@ export const getMany = query({
     } else {
       conversations = await ctx.db
         .query("conversations")
-        .withIndex("by_organization_id", (q) =>
-          q.eq("organizationId", args.organizationId),
+        .withIndex("by_entity_id", (q) =>
+          q.eq("entityId", args.entityId),
         )
         .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
@@ -238,7 +238,7 @@ export const getMany = query({
 export const exportToJson = mutation({
   args: {
     conversationId: v.id("conversations"),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const conversation = await ctx.db.get(args.conversationId);
@@ -250,10 +250,10 @@ export const exportToJson = mutation({
       });
     }
 
-    if (conversation.organizationId !== args.organizationId) {
+    if (conversation.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 

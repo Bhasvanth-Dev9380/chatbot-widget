@@ -8,7 +8,7 @@ function dayStartUtc(ms: number): number {
 
 export const record = internalMutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     provider: v.string(),
     totalTokens: v.number(),
     createdAt: v.optional(v.number()),
@@ -22,7 +22,7 @@ export const record = internalMutation({
     const dayStart = dayStartUtc(createdAt);
 
     await ctx.db.insert("tokenUsageEvents", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       provider: args.provider,
       model: args.model,
       kind: args.kind,
@@ -34,9 +34,9 @@ export const record = internalMutation({
 
     const existing = await ctx.db
       .query("tokenUsageDaily")
-      .withIndex("by_org_day_provider", (q) =>
+      .withIndex("by_entity_day_provider", (q) =>
         q
-          .eq("organizationId", args.organizationId)
+          .eq("entityId", args.entityId)
           .eq("dayStart", dayStart)
           .eq("provider", args.provider),
       )
@@ -44,7 +44,7 @@ export const record = internalMutation({
 
     if (!existing) {
       await ctx.db.insert("tokenUsageDaily", {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         dayStart,
         provider: args.provider,
         totalTokens: args.totalTokens,

@@ -5,13 +5,13 @@ import { getSecretValue, parseSecretString } from "../lib/secrets";
 
 export const getVapiSecrets = action({
   args: {
-    organizationId: v.string()
+    entityId: v.string()
   },
   handler: async (ctx, args) => {
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         service: "vapi",
       },
     );
@@ -52,13 +52,13 @@ export const getVapiSecrets = action({
 
 export const getBeyondPresenceConfig = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         service: "beyond_presence",
       },
     );

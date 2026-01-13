@@ -16,6 +16,13 @@ function toSalesforceCommentBody(prefix: string, text: string) {
   return `${body.slice(0, maxLen - 1)}…`;
 }
 
+function toZohoDeskCommentBody(prefix: string, text: string) {
+  const maxLen = 3900;
+  const body = `${prefix}${prefix ? " " : ""}${String(text ?? "")}`.trim();
+  if (body.length <= maxLen) return body;
+  return `${body.slice(0, maxLen - 1)}…`;
+}
+
 function customerPrefixFromSession(session: any) {
   const name = String(session?.name ?? "").trim();
   const email = String(session?.email ?? "").trim();
@@ -35,12 +42,32 @@ async function tryPostInternalCaseComment(
     if (!caseNumberOrId) return;
 
     await ctx.runAction(api.private.salesforce.addInternalCaseComment, {
-      organizationId: conversation.organizationId,
+      entityId: conversation.entityId,
       caseNumberOrId,
       commentBody,
     });
   } catch (error) {
     console.error("[messages] Failed to post Salesforce internal case comment", error);
+  }
+}
+
+async function tryPostZohoDeskTicketComment(
+  ctx: any,
+  conversation: any,
+  commentBody: string,
+) {
+  try {
+    const ticketId = conversation?.zohoDeskTicketId;
+    if (!ticketId) return;
+
+    await ctx.runAction((api as any).private.zohoDesk.addTicketComment, {
+      entityId: conversation.entityId,
+      ticketId,
+      commentBody,
+      isPublic: false,
+    });
+  } catch (error) {
+    console.error("[messages] Failed to post Zoho Desk ticket comment", error);
   }
 }
 
@@ -106,6 +133,17 @@ export const createFromTranscript = action({
       ),
     );
 
+    await tryPostZohoDeskTicketComment(
+      ctx,
+      conversation,
+      toZohoDeskCommentBody(
+        args.role === "user"
+          ? customerPrefixFromSession(contactSession)
+          : "Assistant:",
+        args.text,
+      ),
+    );
+
     // ✅ If this is a transcript conversation, make it visible once transcript starts.
     const text = String(args.text ?? "");
     if (text.startsWith("[Voice]") || text.startsWith("[Video]")) {
@@ -164,6 +202,12 @@ export const create = action({
     toSalesforceCommentBody(customerPrefixFromSession(contactSession), args.prompt),
   );
 
+  await tryPostZohoDeskTicketComment(
+    ctx,
+    conversation,
+    toZohoDeskCommentBody(customerPrefixFromSession(contactSession), args.prompt),
+  );
+
   // Stop here. No agent, no tools, no fallback AI.
   return;
 }
@@ -187,8 +231,8 @@ export const create = action({
       customPrompt = chatbot?.customSystemPrompt ?? null;
     } else {
       const widgetSettings = await ctx.runQuery(
-        internal.system.widgetSettings.getByOrganizationId,
-        { organizationId: conversation.organizationId }
+        internal.system.widgetSettings.getByEntityId,
+        { entityId: conversation.entityId }
       );
       customPrompt = widgetSettings?.customSystemPrompt ?? null;
     }
@@ -197,10 +241,57 @@ export const create = action({
       console.log("🚀 Starting agent generateText for threadId:", args.threadId);
       console.log("📝 User prompt:", args.prompt);
 
+      const saveAssistantText = async (text: string) => {
+        const content = String(text ?? "").trim();
+        if (!content) return;
+
+        await saveMessage(ctx, components.agent, {
+          threadId: args.threadId,
+          message: {
+            role: "assistant",
+            content,
+          },
+        });
+
+        await tryPostInternalCaseComment(
+          ctx,
+          conversation,
+          toSalesforceCommentBody("Assistant:", content),
+        );
+
+        await tryPostZohoDeskTicketComment(
+          ctx,
+          conversation,
+          toZohoDeskCommentBody("Assistant:", content),
+        );
+      };
+
+      const extractToolOutputOrError = (result: any): { output?: string; error?: boolean } => {
+        const steps = Array.isArray(result?.steps) ? result.steps : [];
+        for (let i = steps.length - 1; i >= 0; i--) {
+          const content = Array.isArray(steps[i]?.content) ? steps[i].content : [];
+          const toolResult = content.find((c: any) => c?.type === "tool-result");
+          if (toolResult && toolResult.output !== undefined) {
+            return { output: String(toolResult.output) };
+          }
+          const toolError = content.find((c: any) => c?.type === "tool-error");
+          if (toolError) {
+            return { error: true };
+          }
+        }
+        return {};
+      };
+
       await tryPostInternalCaseComment(
         ctx,
         conversation,
         toSalesforceCommentBody(customerPrefixFromSession(contactSession), args.prompt),
+      );
+
+      await tryPostZohoDeskTicketComment(
+        ctx,
+        conversation,
+        toZohoDeskCommentBody(customerPrefixFromSession(contactSession), args.prompt),
       );
 
       if (customPrompt) {
@@ -234,7 +325,7 @@ export const create = action({
 
           if (totalTokens > 0) {
             await ctx.runMutation((internal as any).system.tokenUsage.record, {
-              organizationId: conversation.organizationId,
+              entityId: conversation.entityId,
               provider: "openai",
               model: "gpt-4o-mini",
               kind: "agent_generate",
@@ -259,6 +350,12 @@ export const create = action({
             conversation,
             toSalesforceCommentBody("Assistant:", assistantText),
           );
+
+          await tryPostZohoDeskTicketComment(
+            ctx,
+            conversation,
+            toZohoDeskCommentBody("Assistant:", assistantText),
+          );
         }
 
         // Check if agent ended with tool calls instead of text
@@ -266,25 +363,20 @@ export const create = action({
         if (lastStep.finishReason === "tool-calls") {
           console.warn("⚠️ Custom agent stopped at tool-calls without generating text response!");
 
-          // Extract tool result to send as the response
-          const toolResult = lastStep.content.find((c: any) => c.type === "tool-result") as any;
-          if (toolResult && toolResult.output) {
-            console.log("💡 Saving tool result as assistant message:", toolResult.output);
-            await saveMessage(ctx, components.agent, {
-              threadId: args.threadId,
-              message: {
-                role: "assistant",
-                content: String(toolResult.output),
-              },
-            });
-
-            await tryPostInternalCaseComment(
-              ctx,
-              conversation,
-              toSalesforceCommentBody("Assistant:", String(toolResult.output)),
+          const tool = extractToolOutputOrError(result);
+          if (tool.output && tool.output.trim()) {
+            console.log("💡 Saving tool result as assistant message:", tool.output);
+            await saveAssistantText(tool.output);
+          } else if (tool.error) {
+            console.warn("⚠️ Tool failed; saving fallback assistant message");
+            await saveAssistantText(
+              "I’m having trouble searching the knowledge base right now. Want me to connect you with our team?",
             );
           } else {
             console.error("❌ No tool result found to save for custom agent");
+            await saveAssistantText(
+              "I’m having trouble completing that request right now. Want me to connect you with our team?",
+            );
           }
         }
       } else {
@@ -304,7 +396,7 @@ export const create = action({
 
           if (totalTokens > 0) {
             await ctx.runMutation((internal as any).system.tokenUsage.record, {
-              organizationId: conversation.organizationId,
+              entityId: conversation.entityId,
               provider: "openai",
               model: "gpt-4o-mini",
               kind: "agent_generate",
@@ -329,6 +421,12 @@ export const create = action({
             conversation,
             toSalesforceCommentBody("Assistant:", assistantText),
           );
+
+          await tryPostZohoDeskTicketComment(
+            ctx,
+            conversation,
+            toZohoDeskCommentBody("Assistant:", assistantText),
+          );
         }
 
         // Check if agent ended with tool calls instead of text
@@ -336,25 +434,20 @@ export const create = action({
         if (lastStep.finishReason === "tool-calls") {
           console.warn("⚠️ Agent stopped at tool-calls without generating text response!");
 
-          // Extract tool result to send as the response
-          const toolResult = lastStep.content.find((c: any) => c.type === "tool-result") as any;
-          if (toolResult && toolResult.output) {
-            console.log("💡 Saving tool result as assistant message:", toolResult.output);
-            await saveMessage(ctx, components.agent, {
-              threadId: args.threadId,
-              message: {
-                role: "assistant",
-                content: String(toolResult.output),
-              },
-            });
-
-            await tryPostInternalCaseComment(
-              ctx,
-              conversation,
-              toSalesforceCommentBody("Assistant:", String(toolResult.output)),
+          const tool = extractToolOutputOrError(result);
+          if (tool.output && tool.output.trim()) {
+            console.log("💡 Saving tool result as assistant message:", tool.output);
+            await saveAssistantText(tool.output);
+          } else if (tool.error) {
+            console.warn("⚠️ Tool failed; saving fallback assistant message");
+            await saveAssistantText(
+              "I’m having trouble searching the knowledge base right now. Want me to connect you with our team?",
             );
           } else {
             console.error("❌ No tool result found to save");
+            await saveAssistantText(
+              "I’m having trouble completing that request right now. Want me to connect you with our team?",
+            );
           }
         }
       }
@@ -387,6 +480,12 @@ export const create = action({
         toSalesforceCommentBody(customerPrefixFromSession(contactSession), args.prompt),
       );
 
+      await tryPostZohoDeskTicketComment(
+        ctx,
+        conversation,
+        toZohoDeskCommentBody(customerPrefixFromSession(contactSession), args.prompt),
+      );
+
       // Save fallback assistant response (CRITICAL)
       await saveMessage(ctx, components.agent, {
         threadId: args.threadId,
@@ -401,6 +500,15 @@ export const create = action({
         ctx,
         conversation,
         toSalesforceCommentBody(
+          "Assistant:",
+          "Sorry — something went wrong on my side. Please try again.",
+        ),
+      );
+
+      await tryPostZohoDeskTicketComment(
+        ctx,
+        conversation,
+        toZohoDeskCommentBody(
           "Assistant:",
           "Sorry — something went wrong on my side. Please try again.",
         ),

@@ -3,15 +3,15 @@ import { query } from "../_generated/server";
 
 export const validate = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
-    console.log("[validate] Checking organizationId:", args.organizationId);
+    console.log("[validate] Checking entityId:", args.entityId);
     
     const users = await ctx.db
       .query("users")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId)
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId)
       )
       .collect();
 
@@ -21,9 +21,9 @@ export const validate = query({
       return { valid: true };
     }
 
-    // Debug: List all users to see what organizationIds exist
+    // Debug: List all users to see what entityIds exist
     const allUsers = await ctx.db.query("users").collect();
-    console.log("[validate] All organizationIds in DB:", allUsers.map(u => u.organizationId));
+    console.log("[validate] All entityIds in DB:", allUsers.map(u => u.entityId));
 
     return {
       valid: false,

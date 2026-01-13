@@ -4,7 +4,7 @@ import { ConversationStatusIcon } from "@/components/conversation-status-icon";
 import { useAtomValue, useSetAtom} from "jotai";
 import {formatDistanceToNow} from "date-fns";
 import { ArrowLeftIcon} from "lucide-react";
-import { chatbotIdAtom, contactSessionIdAtomFamily, conversationIdAtom, organizationIdAtom, screenAtom, isVoiceConversationAtom } from "@/modules/widget/atoms/widget-atoms";
+import { chatbotIdAtom, contactSessionIdAtomFamily, conversationIdAtom, entityIdAtom, screenAtom, isVoiceConversationAtom } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { WidgetFooter } from "../components/widget-footer";
 import { Button } from "@/components/ui/button";
@@ -38,9 +38,9 @@ export const WidgetInboxScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
   const setIsVoiceConversation = useSetAtom(isVoiceConversationAtom);
-  const organizationId = useAtomValue(organizationIdAtom);
+  const entityId = useAtomValue(entityIdAtom);
   const chatbotId = useAtomValue(chatbotIdAtom);
-  const contactSessionId = useAtomValue(contactSessionIdAtomFamily(organizationId || ""));
+  const contactSessionId = useAtomValue(contactSessionIdAtomFamily(entityId || ""));
 
   const conversations = usePaginatedQuery(
     api.public.conversations.getMany,

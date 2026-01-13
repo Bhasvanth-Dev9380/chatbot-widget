@@ -36,7 +36,7 @@ export const processFile = internalAction({
 
       if (bytes.byteLength > 0) {
         await ctx.runMutation((internal as any).system.convexUsageEstimated.record, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           fileBytes: bytes.byteLength,
         });
       }
@@ -47,7 +47,7 @@ export const processFile = internalAction({
         filename: args.filename,
         bytes,
         mimeType: args.mimeType,
-        organizationId: args.orgId,
+        entityId: args.orgId,
       });
 
       console.log(`[processFile] Extracted ${text.length} characters from "${args.displayName}"`);
@@ -72,14 +72,14 @@ export const processFile = internalAction({
         // Estimated vector write: one embedding vector per chunk.
         // text-embedding-3-small dimension is 1536 floats => 1536 * 4 bytes.
         await ctx.runMutation((internal as any).system.convexUsageEstimated.record, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           vectorBytes: 1536 * 4,
         });
 
         const estimatedEmbeddingTokens = Math.ceil(chunk.length / 4);
         if (estimatedEmbeddingTokens > 0) {
           await ctx.runMutation((internal as any).system.tokenUsage.record, {
-            organizationId: args.orgId,
+            entityId: args.orgId,
             provider: "openai",
             model: "text-embedding-3-small",
             kind: "rag_add_embedding",
@@ -124,7 +124,7 @@ export const processFile = internalAction({
       // Delete the old 'file added' notification for this file (using fileName since entryId changes)
       try {
         const oldNotifications = await ctx.runQuery(internal.private.notifications.listByFileName, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           fileName: args.displayName,
         });
         
@@ -143,7 +143,7 @@ export const processFile = internalAction({
       console.log(`[processFile] Creating success notification for "${args.displayName}"`);
       try {
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_ready",
           title: "✓ File ready",
           message: `"${args.displayName}" is ready to use`,
@@ -158,7 +158,7 @@ export const processFile = internalAction({
       // Track file change for reactive queries
       try {
         await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           knowledgeBaseId: args.knowledgeBaseId ?? undefined,
         });
       } catch (error) {
@@ -189,7 +189,7 @@ export const processFile = internalAction({
 
       try {
         const oldNotifications = await ctx.runQuery(internal.private.notifications.listByFileName, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           fileName: args.displayName,
         });
 
@@ -204,7 +204,7 @@ export const processFile = internalAction({
 
       // Create failure notification
       await ctx.runMutation(internal.private.notifications.create, {
-        organizationId: args.orgId,
+        entityId: args.orgId,
         type: "file_failed",
         title: "File processing failed",
         message: `Failed to process "${args.displayName}": ${errorMessage}`,
@@ -214,7 +214,7 @@ export const processFile = internalAction({
 
       try {
         await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           knowledgeBaseId: args.knowledgeBaseId ?? undefined,
         });
       } catch (trackErr) {
@@ -241,7 +241,7 @@ export const finalizeFileProcessingNotification = internalAction({
     let existingNotifs: any[] = [];
     try {
       existingNotifs = await ctx.runQuery(internal.private.notifications.listByFileName, {
-        organizationId: args.orgId,
+        entityId: args.orgId,
         fileName: args.displayName,
       });
     } catch (error) {
@@ -308,7 +308,7 @@ export const finalizeFileProcessingNotification = internalAction({
 
       if (foundError) {
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_failed",
           title: "File processing failed",
           message: `Failed to process "${args.displayName}": ${foundErrorMessage ?? "Unknown error"}`,
@@ -317,7 +317,7 @@ export const finalizeFileProcessingNotification = internalAction({
         });
       } else {
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_ready",
           title: "✓ File ready",
           message: `"${args.displayName}" is ready to use`,
@@ -328,7 +328,7 @@ export const finalizeFileProcessingNotification = internalAction({
 
       try {
         await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           knowledgeBaseId: args.knowledgeBaseId ?? undefined,
         });
       } catch (error) {
@@ -381,14 +381,14 @@ export const deleteFileByStorageId = internalAction({
         console.error(`[deleteFileByStorageId] Namespace "${args.namespace}" not found`);
         try {
           await ctx.runMutation(internal.system.fileProcessor.deleteDeletedFileTombstone, {
-            organizationId: args.orgId,
+            entityId: args.orgId,
             storageId: args.storageId,
           });
         } catch (error) {
           console.error(`[deleteFileByStorageId] Failed to delete tombstone:`, error);
         }
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_ready",
           title: "✓ Deletion complete",
           message: `"${args.displayName}" was removed`,
@@ -428,7 +428,7 @@ export const deleteFileByStorageId = internalAction({
       // Reactive refresh each batch so UI doesn't get stuck in "deleting" without updates.
       try {
         await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           knowledgeBaseId: args.knowledgeBaseId ?? undefined,
         });
       } catch (error) {
@@ -460,7 +460,7 @@ export const deleteFileByStorageId = internalAction({
       // Completion notification
       try {
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_ready",
           title: "✓ Deletion complete",
           message: `"${args.displayName}" was successfully removed from your knowledge base`,
@@ -474,7 +474,7 @@ export const deleteFileByStorageId = internalAction({
       // Remove tombstone so the file disappears only after deletion is fully done
       try {
         await ctx.runMutation(internal.system.fileProcessor.deleteDeletedFileTombstone, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           storageId: args.storageId,
         });
       } catch (error) {
@@ -484,7 +484,7 @@ export const deleteFileByStorageId = internalAction({
       // Reactive refresh
       try {
         await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           knowledgeBaseId: args.knowledgeBaseId ?? undefined,
         });
       } catch (error) {
@@ -493,7 +493,7 @@ export const deleteFileByStorageId = internalAction({
     } catch (error) {
       console.error(`[deleteFileByStorageId] Error deleting "${args.displayName}":`, error);
       await ctx.runMutation(internal.private.notifications.create, {
-        organizationId: args.orgId,
+        entityId: args.orgId,
         type: "file_failed",
         title: "File deletion failed",
         message: `Failed to delete "${args.displayName}": ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -523,7 +523,7 @@ export const deleteFileByStorageId = internalAction({
       // Reactive refresh (so UI doesn't get stuck)
       try {
         await ctx.runMutation(internal.system.fileProcessor.trackFileChange, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           knowledgeBaseId: args.knowledgeBaseId ?? undefined,
         });
       } catch (error) {
@@ -535,14 +535,14 @@ export const deleteFileByStorageId = internalAction({
 
 export const deleteDeletedFileTombstone = internalMutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     storageId: v.id("_storage"),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("deletedFiles")
-      .withIndex("by_org_and_storage", (q) =>
-        q.eq("organizationId", args.organizationId).eq("storageId", args.storageId),
+      .withIndex("by_entity_and_storage", (q) =>
+        q.eq("entityId", args.entityId).eq("storageId", args.storageId),
       )
       .first();
     if (existing) {
@@ -659,7 +659,7 @@ export const deleteFileChunks = internalAction({
         console.error(`[deleteFileChunks] Namespace "${args.namespace}" not found`);
         // Still create success notification since the file is effectively deleted
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_ready",
           title: "✓ Deletion complete",
           message: `"${args.displayName}" was successfully removed`,
@@ -751,7 +751,7 @@ export const deleteFileChunks = internalAction({
       
       try {
         await ctx.runMutation(internal.private.notifications.create, {
-          organizationId: args.orgId,
+          entityId: args.orgId,
           type: "file_ready",
           title: "✓ Deletion complete",
           message: `"${args.displayName}" was successfully removed from your knowledge base`,
@@ -769,7 +769,7 @@ export const deleteFileChunks = internalAction({
 
       // Create failure notification
       await ctx.runMutation(internal.private.notifications.create, {
-        organizationId: args.orgId,
+        entityId: args.orgId,
         type: "file_failed",
         title: "File deletion failed",
         message: `Failed to delete "${args.displayName}": ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -783,12 +783,12 @@ export const deleteFileChunks = internalAction({
 // Track file change for reactive queries
 export const trackFileChange = internalMutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("fileChangeTracker", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       knowledgeBaseId: args.knowledgeBaseId ?? undefined,
       lastChange: Date.now(),
       changeType: "update",

@@ -5,23 +5,25 @@ import { upsertSecret } from "../lib/secrets";
 
 export const upsert = internalAction({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     service: v.union(
       v.literal("vapi"),
       v.literal("beyond_presence"),
       v.literal("salesforce"),
+      v.literal("zoho_desk"),
+      v.literal("slack"),
     ),
     value: v.any(),
   },
   handler: async (ctx, args) => {
-  const secretName = `tenant/${args.organizationId}/${args.service}`;
+  const secretName = `tenant/${args.entityId}/${args.service}`;
 
   await upsertSecret(secretName, args.value);
 
   await ctx.runMutation(internal.system.plugin.upsert, {
   service: args.service,
   secretName,
-  organizationId: args.organizationId,
+  entityId: args.entityId,
 });
 
 

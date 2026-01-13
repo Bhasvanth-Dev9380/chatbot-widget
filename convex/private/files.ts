@@ -48,13 +48,13 @@ export const generateUploadUrl = mutation(async (ctx) => {
 ------------------------------------------------- */
 export const debugListAll = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     // Get all KBs for this org
     const kbs = await ctx.db
       .query("knowledgeBases")
-      .withIndex("by_organization_id", (q) => q.eq("organizationId", args.organizationId))
+      .withIndex("by_entity_id", (q) => q.eq("entityId", args.entityId))
       .collect();
 
     const results: Array<{
@@ -68,7 +68,7 @@ export const debugListAll = query({
     }> = [];
 
     for (const kb of kbs) {
-      const constructedNs = `${args.organizationId}_${kb.knowledgeBaseId || kb._id}`;
+      const constructedNs = `${args.entityId}_${kb.knowledgeBaseId || kb._id}`;
       const nsToUse = kb.ragNamespace || constructedNs;
       
       let namespaceFound = false;
@@ -136,7 +136,7 @@ export const debugGetEntry = query({
 ------------------------------------------------- */
 export const createFileAfterUpload = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     storageId: v.id("_storage"),
     filename: v.string(),
     displayName: v.string(),
@@ -161,8 +161,8 @@ export const createFileAfterUpload = mutation({
 
     // Use ragNamespace if available, otherwise construct consistently
     const namespace = kb
-      ? (kb.ragNamespace || `${args.organizationId}_${kb.knowledgeBaseId || kb._id}`)
-      : args.organizationId;
+      ? (kb.ragNamespace || `${args.entityId}_${kb.knowledgeBaseId || kb._id}`)
+      : args.entityId;
 
     console.log(`[createFileAfterUpload] Creating file "${displayName}" in namespace: ${namespace}, KB _id: ${args.knowledgeBaseId}, KB ragNamespace: ${kb?.ragNamespace}`);
 
@@ -174,7 +174,7 @@ export const createFileAfterUpload = mutation({
       filterValues: [{ name: "storageId", value: args.storageId }],
       metadata: {
         storageId: args.storageId,
-        uploadedBy: args.organizationId,
+        uploadedBy: args.entityId,
         displayName,
         originalFilename: args.filename,
         category: args.category ?? null,
@@ -189,7 +189,7 @@ export const createFileAfterUpload = mutation({
     console.log(`[createFileAfterUpload] Placeholder created with entryId: ${placeholder.entryId}`);
 
     await ctx.db.insert("notifications", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       type: "file_processing",
       title: "📁 File added",
       message: `"${displayName}" is being processed`,
@@ -200,7 +200,7 @@ export const createFileAfterUpload = mutation({
     });
 
     await ctx.db.insert("fileChangeTracker", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       knowledgeBaseId: args.knowledgeBaseId ?? undefined,
       lastChange: Date.now(),
       changeType: "add",
@@ -216,7 +216,7 @@ export const createFileAfterUpload = mutation({
       category: args.category ?? null,
       knowledgeBaseId: args.knowledgeBaseId ?? null,
       sourceType: "uploaded",
-      orgId: args.organizationId,
+      orgId: args.entityId,
       entryId: placeholder.entryId,
     });
 
@@ -224,7 +224,7 @@ export const createFileAfterUpload = mutation({
       15_000,
       internal.system.fileProcessor.finalizeFileProcessingNotification,
       {
-        orgId: args.organizationId,
+        orgId: args.entityId,
         entryId: placeholder.entryId,
         displayName,
         storageId: args.storageId,
@@ -243,7 +243,7 @@ export const createFileAfterUpload = mutation({
 export const deleteFile = mutation({
   args: {
     entryId: vEntryId,
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const entry = await rag.getEntry(ctx, { entryId: args.entryId });
@@ -255,9 +255,9 @@ export const deleteFile = mutation({
     const metadata = entry.metadata as EntryMetadata | undefined;
     
     // Check authorization - allow deletion if:
-    // 1. metadata.uploadedBy matches organizationId, OR
+    // 1. metadata.uploadedBy matches entityId, OR
     // 2. No uploadedBy set (legacy or processing files)
-    if (metadata?.uploadedBy && metadata.uploadedBy !== args.organizationId) {
+    if (metadata?.uploadedBy && metadata.uploadedBy !== args.entityId) {
       throw new ConvexError({ code: "UNAUTHORIZED", message: "Forbidden" });
     }
 
@@ -265,21 +265,21 @@ export const deleteFile = mutation({
       ? await ctx.db.get(metadata.knowledgeBaseId)
       : null;
 
-    const namespace = kb ? getKbNamespace(args.organizationId, kb) : args.organizationId;
+    const namespace = kb ? getKbNamespace(args.entityId, kb) : args.entityId;
     const displayName = metadata?.displayName || entry.key || "Unknown";
 
     // If this is an uploaded file, tombstone by storageId and delete in background.
     if (metadata?.storageId) {
       const existing = await ctx.db
         .query("deletedFiles")
-        .withIndex("by_org_and_storage", (q) =>
-          q.eq("organizationId", args.organizationId).eq("storageId", metadata.storageId),
+        .withIndex("by_entity_and_storage", (q) =>
+          q.eq("entityId", args.entityId).eq("storageId", metadata.storageId),
         )
         .first();
 
       if (!existing) {
         await ctx.db.insert("deletedFiles", {
-          organizationId: args.organizationId,
+          entityId: args.entityId,
           knowledgeBaseId: metadata.knowledgeBaseId ?? undefined,
           storageId: metadata.storageId,
           deletedAt: Date.now(),
@@ -291,7 +291,7 @@ export const deleteFile = mutation({
         displayName,
         storageId: metadata.storageId,
         namespace,
-        orgId: args.organizationId,
+        orgId: args.entityId,
         knowledgeBaseId: (metadata.knowledgeBaseId as any) ?? null,
       });
     } else {
@@ -304,7 +304,7 @@ export const deleteFile = mutation({
     }
 
     await ctx.db.insert("fileChangeTracker", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       knowledgeBaseId: metadata?.knowledgeBaseId ?? undefined,
       lastChange: Date.now(),
       changeType: "delete",
@@ -317,7 +317,7 @@ export const deleteFile = mutation({
 ------------------------------------------------- */
 export const list = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     category: v.optional(v.string()),
     knowledgeBaseId: v.optional(v.id("knowledgeBases")),
     paginationOpts: paginationOptsValidator,
@@ -326,15 +326,15 @@ export const list = query({
     // Watch file change tracker to make this query reactive
     const latestChange = await ctx.db
       .query("fileChangeTracker")
-      .withIndex("by_organization_id", (q) => q.eq("organizationId", args.organizationId))
+      .withIndex("by_entity_id", (q) => q.eq("entityId", args.entityId))
       .order("desc")
       .first();
 
-    console.log(`[files.list] Query for org ${args.organizationId}, kbFilter: ${args.knowledgeBaseId ?? "ALL"}`);
+    console.log(`[files.list] Query for org ${args.entityId}, kbFilter: ${args.knowledgeBaseId ?? "ALL"}`);
 
     const deleted = await ctx.db
       .query("deletedFiles")
-      .withIndex("by_organization_id", (q) => q.eq("organizationId", args.organizationId))
+      .withIndex("by_entity_id", (q) => q.eq("entityId", args.entityId))
       .collect();
     const deletedStorageIds = new Set<string>(deleted.map((d) => d.storageId));
 
@@ -419,13 +419,13 @@ export const list = query({
     if (args.knowledgeBaseId) {
       // Query specific knowledge base
       const kb = await ctx.db.get(args.knowledgeBaseId);
-      if (!kb || kb.organizationId !== args.organizationId) {
+      if (!kb || kb.entityId !== args.entityId) {
         console.log(`[files.list] KB ${args.knowledgeBaseId} not found or wrong org`);
         return { page: [], isDone: true, continueCursor: "" };
       }
 
       // Use ragNamespace if available, otherwise construct from knowledgeBaseId or _id
-      const ns = kb.ragNamespace || `${args.organizationId}_${kb.knowledgeBaseId || kb._id}`;
+      const ns = kb.ragNamespace || `${args.entityId}_${kb.knowledgeBaseId || kb._id}`;
       console.log(`[files.list] Querying KB "${kb.name}" namespace: ${ns}`);
 
       await scanNamespace(ns);
@@ -433,8 +433,8 @@ export const list = query({
       // Query all knowledge bases for this organization
       const kbs = await ctx.db
         .query("knowledgeBases")
-        .withIndex("by_organization_id", (q) =>
-          q.eq("organizationId", args.organizationId)
+        .withIndex("by_entity_id", (q) =>
+          q.eq("entityId", args.entityId)
         )
         .collect();
 
@@ -442,7 +442,7 @@ export const list = query({
 
       for (const kb of kbs) {
         // Use ragNamespace if available, otherwise construct from knowledgeBaseId or _id
-        const ns = kb.ragNamespace || `${args.organizationId}_${kb.knowledgeBaseId || kb._id}`;
+        const ns = kb.ragNamespace || `${args.entityId}_${kb.knowledgeBaseId || kb._id}`;
 
         await scanNamespace(ns);
 
@@ -483,7 +483,7 @@ export const list = query({
 export const retryFileProcessing = mutation({
   args: {
     entryId: vEntryId,
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const entry = await rag.getEntry(ctx, { entryId: args.entryId });
@@ -492,7 +492,7 @@ export const retryFileProcessing = mutation({
     }
 
     const metadata = entry.metadata as EntryMetadata | undefined;
-    if (metadata?.uploadedBy !== args.organizationId) {
+    if (metadata?.uploadedBy !== args.entityId) {
       throw new ConvexError({ code: "UNAUTHORIZED", message: "Forbidden" });
     }
 
@@ -510,8 +510,8 @@ export const retryFileProcessing = mutation({
 
     // Use the KB's ragNamespace if available
     const namespace = kb
-      ? getKbNamespace(args.organizationId, kb)
-      : args.organizationId;
+      ? getKbNamespace(args.entityId, kb)
+      : args.entityId;
 
     const displayName = metadata?.displayName ?? "unknown";
     const originalFilename = metadata?.originalFilename ?? "unknown";
@@ -529,7 +529,7 @@ export const retryFileProcessing = mutation({
       filterValues: [{ name: "storageId", value: storageId }],
       metadata: {
         storageId,
-        uploadedBy: args.organizationId,
+        uploadedBy: args.entityId,
         displayName,
         originalFilename,
         category: metadata?.category ?? null,
@@ -551,7 +551,7 @@ export const retryFileProcessing = mutation({
       category: metadata?.category ?? null,
       knowledgeBaseId: metadata?.knowledgeBaseId ?? null,
       sourceType,
-      orgId: args.organizationId,
+      orgId: args.entityId,
       entryId: placeholder.entryId,
     });
 

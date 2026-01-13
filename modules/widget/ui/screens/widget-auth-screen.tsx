@@ -19,7 +19,7 @@ import { api } from "../../../../convex/_generated/api";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import {Doc} from "../../../../convex/_generated/dataModel";
 import { useAtomValue } from "jotai";
-import { contactSessionIdAtomFamily, organizationIdAtom,screenAtom } from "../../atoms/widget-atoms";
+import { contactSessionIdAtomFamily, entityIdAtom,screenAtom } from "../../atoms/widget-atoms";
 import { useSetAtom } from "jotai";
 const formSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -32,9 +32,9 @@ export const WidgetAuthScreen = () => {
 
     const setScreen = useSetAtom(screenAtom);
 
-    const organizationId = useAtomValue(organizationIdAtom);
+    const entityId = useAtomValue(entityIdAtom);
     const setContactSessionId = useSetAtom(
-    contactSessionIdAtomFamily(organizationId || "")
+    contactSessionIdAtomFamily(entityId || "")
     );
 
     const form = useForm<z.infer<typeof formSchema>>({
@@ -51,7 +51,7 @@ export const WidgetAuthScreen = () => {
 
 
     const onSubmit = async (values: z.infer<typeof formSchema>) => {
-        if (!organizationId) {
+        if (!entityId) {
             return;
         }
 
@@ -73,7 +73,7 @@ export const WidgetAuthScreen = () => {
 
         const contactSessionId = await createContactSession({
             ...values,
-            organizationId,
+            entityId,
             metadata,
         })
 

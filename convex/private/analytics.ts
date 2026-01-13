@@ -67,7 +67,7 @@ const dayKeyUtc = (dayStartMs: number) => {
 
 export const getKpis = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     chatbotId: v.optional(v.id("chatbots")),
     from: v.number(),
     to: v.number(),
@@ -80,7 +80,7 @@ export const getKpis = query({
       ? await ctx.db
           .query("conversations")
           .withIndex("by_chatbot_id", (q) => q.eq("chatbotId", args.chatbotId))
-          .filter((q) => q.eq(q.field("organizationId"), args.organizationId))
+          .filter((q) => q.eq(q.field("entityId"), args.entityId))
           .filter((q) => q.gte(q.field("_creationTime"), from))
           .filter((q) => q.lt(q.field("_creationTime"), to))
           .collect()
@@ -89,8 +89,8 @@ export const getKpis = query({
           // This avoids counting historical conversations from deleted chatbots.
           const chatbots = await ctx.db
             .query("chatbots")
-            .withIndex("by_organization_id", (q) =>
-              q.eq("organizationId", args.organizationId)
+            .withIndex("by_entity_id", (q) =>
+              q.eq("entityId", args.entityId)
             )
             .collect();
 
@@ -100,8 +100,8 @@ export const getKpis = query({
 
           const allOrgConversations = await ctx.db
             .query("conversations")
-            .withIndex("by_organization_id", (q) =>
-              q.eq("organizationId", args.organizationId)
+            .withIndex("by_entity_id", (q) =>
+              q.eq("entityId", args.entityId)
             )
             .filter((q) => q.gte(q.field("_creationTime"), from))
             .filter((q) => q.lt(q.field("_creationTime"), to))
@@ -251,7 +251,7 @@ export const getKpis = query({
 
 export const getKpiTrends = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     chatbotId: v.optional(v.id("chatbots")),
     from: v.number(),
     to: v.number(),
@@ -290,15 +290,15 @@ export const getKpiTrends = query({
       ? await ctx.db
           .query("conversations")
           .withIndex("by_chatbot_id", (q) => q.eq("chatbotId", args.chatbotId))
-          .filter((q) => q.eq(q.field("organizationId"), args.organizationId))
+          .filter((q) => q.eq(q.field("entityId"), args.entityId))
           .filter((q) => q.gte(q.field("_creationTime"), from))
           .filter((q) => q.lt(q.field("_creationTime"), to))
           .collect()
       : await (async () => {
           const chatbots = await ctx.db
             .query("chatbots")
-            .withIndex("by_organization_id", (q) =>
-              q.eq("organizationId", args.organizationId)
+            .withIndex("by_entity_id", (q) =>
+              q.eq("entityId", args.entityId)
             )
             .collect();
 
@@ -308,8 +308,8 @@ export const getKpiTrends = query({
 
           const allOrgConversations = await ctx.db
             .query("conversations")
-            .withIndex("by_organization_id", (q) =>
-              q.eq("organizationId", args.organizationId)
+            .withIndex("by_entity_id", (q) =>
+              q.eq("entityId", args.entityId)
             )
             .filter((q) => q.gte(q.field("_creationTime"), from))
             .filter((q) => q.lt(q.field("_creationTime"), to))

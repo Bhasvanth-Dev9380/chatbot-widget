@@ -20,11 +20,406 @@ type SalesforceSecret = {
   clientId?: string;
   clientSecret?: string;
   refreshToken?: string;
+  oauthBaseUrl?: string;
   oauthTokenUrl?: string;
-  username?: string;
-  password?: string;
-  securityToken?: string;
+  salesforceOrgId?: string;
+  salesforceUserId?: string;
+  identityUrl?: string;
+  issuedAt?: number;
+  scopes?: string;
+  connectionStatus?: "CONNECTED" | "DISCONNECTED";
+
+  // New per-user connection storage.
+  // Tokens are stored per Convex user (within the organization secret), and never handled in frontend.
+  defaultUserId?: string;
+  connections?: Record<
+    string,
+    {
+      accessToken?: string;
+      refreshToken?: string;
+      instanceUrl?: string;
+      identityUrl?: string;
+      salesforceOrgId?: string;
+      salesforceUserId?: string;
+      issuedAt?: number;
+      scopes?: string;
+      connectionStatus?: "CONNECTED" | "DISCONNECTED";
+    }
+  >;
 };
+
+type SalesforceUserConnection = NonNullable<SalesforceSecret["connections"]>[string];
+
+function getConnectionForUser(
+  secret: SalesforceSecret,
+  userId: string | null,
+): { userId: string | null; connection: SalesforceUserConnection | null } {
+  const connections = secret.connections;
+  if (connections && userId && connections[userId]) {
+    return { userId, connection: connections[userId] ?? null };
+  }
+
+  const fallbackUserId = String(secret.defaultUserId ?? "").trim();
+  if (connections && fallbackUserId && connections[fallbackUserId]) {
+    return { userId: fallbackUserId, connection: connections[fallbackUserId] ?? null };
+  }
+
+  if (connections) {
+    const first = Object.entries(connections).find(([, v]) => Boolean(v));
+    if (first) {
+      return { userId: first[0] ?? null, connection: first[1] ?? null };
+    }
+  }
+
+  // Legacy org-scoped fields fallback.
+  const legacyHasAny = Boolean(
+    String(secret.refreshToken ?? "").trim() ||
+      String(secret.accessToken ?? "").trim() ||
+      String(secret.instanceUrl ?? "").trim(),
+  );
+  if (legacyHasAny) {
+    return {
+      userId: null,
+      connection: {
+        accessToken: secret.accessToken,
+        refreshToken: secret.refreshToken,
+        instanceUrl: secret.instanceUrl,
+        identityUrl: secret.identityUrl,
+        salesforceOrgId: secret.salesforceOrgId,
+        salesforceUserId: secret.salesforceUserId,
+        connectionStatus: String(secret.refreshToken ?? "").trim() ? "CONNECTED" : "DISCONNECTED",
+      },
+    };
+  }
+
+  return { userId: null, connection: null };
+}
+
+function getOrgOAuthConnection(secret: SalesforceSecret): {
+  accessToken: string;
+  refreshToken: string;
+  instanceUrl: string;
+  connectionStatus?: SalesforceSecret["connectionStatus"];
+} | null {
+  const rootAccessToken = String(secret.accessToken ?? "").trim();
+  const rootRefreshToken = String(secret.refreshToken ?? "").trim();
+  const rootInstanceUrl = String(secret.instanceUrl ?? "").trim();
+  const rootHasAny = Boolean(rootAccessToken || rootRefreshToken || rootInstanceUrl);
+  if (rootHasAny) {
+    return {
+      accessToken: rootAccessToken,
+      refreshToken: rootRefreshToken,
+      instanceUrl: rootInstanceUrl,
+      connectionStatus: secret.connectionStatus,
+    };
+  }
+
+  const { connection } = getConnectionForUser(secret, null);
+  if (!connection) return null;
+  const accessToken = String(connection.accessToken ?? "").trim();
+  const refreshToken = String(connection.refreshToken ?? "").trim();
+  const instanceUrl = String(connection.instanceUrl ?? "").trim();
+  const hasAny = Boolean(accessToken || refreshToken || instanceUrl);
+  if (!hasAny) return null;
+
+  return {
+    accessToken,
+    refreshToken,
+    instanceUrl,
+    connectionStatus: connection.connectionStatus,
+  };
+}
+
+function normalizeOAuthBaseUrl(value: string | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "https://login.salesforce.com";
+  return raw.replace(/\/$/, "");
+}
+
+function getGlobalOAuthAppConfig(): {
+  clientId: string;
+  clientSecret: string;
+  oauthBaseUrl: string;
+} | null {
+  const clientId = String(process.env.SALESFORCE_CLIENT_ID ?? "").trim();
+  const clientSecret = String(process.env.SALESFORCE_CLIENT_SECRET ?? "").trim();
+  const oauthBaseUrl = normalizeOAuthBaseUrl(process.env.SALESFORCE_OAUTH_BASE_URL);
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret, oauthBaseUrl };
+}
+
+function inferOAuthBaseUrlFromTokenUrl(tokenUrl: string | undefined) {
+  const raw = String(tokenUrl ?? "").trim();
+  if (!raw) return null;
+  const suffix = "/services/oauth2/token";
+  if (raw.endsWith(suffix)) return raw.slice(0, -suffix.length);
+  return null;
+}
+
+async function getSalesforceSecretForOrg(
+  ctx: any,
+  entityId: string,
+): Promise<{ plugin: any | null; secret: SalesforceSecret | null }> {
+  const plugin: any = await ctx.runQuery(
+    internal.system.plugin.getByEntityIdAndService,
+    {
+      entityId,
+      service: "salesforce" as any,
+    },
+  );
+
+  if (!plugin) return { plugin: null, secret: null };
+
+  const secretValue = await getSecretValue(plugin.secretName);
+  const secretData = parseSecretString<SalesforceSecret>(secretValue);
+  return { plugin, secret: secretData };
+}
+
+export const getConnectionStatus: any = action({
+  args: {
+    entityId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { plugin, secret } = await getSalesforceSecretForOrg(ctx, args.entityId);
+    const global = getGlobalOAuthAppConfig();
+
+    if (!global) {
+      return {
+        configured: false,
+        connected: false,
+      };
+    }
+
+    if (!plugin || !secret) {
+      const hasGlobalCredentials = Boolean(global?.clientId && global?.clientSecret);
+      return {
+        configured: hasGlobalCredentials,
+        connected: false,
+      };
+    }
+
+    const hasCredentials = Boolean(global?.clientId && global?.clientSecret);
+    const orgConn = getOrgOAuthConnection(secret);
+    const hasRefreshToken = Boolean(String(orgConn?.refreshToken ?? "").trim());
+    const status = String(secret.connectionStatus ?? orgConn?.connectionStatus ?? "").toUpperCase();
+    const isConnected = (status ? status === "CONNECTED" : true) && hasRefreshToken;
+    return {
+      configured: hasCredentials,
+      connected: hasCredentials && isConnected,
+    };
+  },
+});
+
+export const setOAuthAppCredentials: any = action({
+  args: {
+    entityId: v.string(),
+    clientId: v.string(),
+    clientSecret: v.string(),
+    oauthBaseUrl: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    void ctx;
+    void args;
+    throw new ConvexError({
+      code: "BAD_REQUEST",
+      message:
+        "Per-organization Connected App credentials are not supported. Configure SALESFORCE_CLIENT_ID and SALESFORCE_CLIENT_SECRET.",
+    });
+  },
+});
+
+export const getOAuthAppConfig: any = action({
+  args: {
+    entityId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const global = getGlobalOAuthAppConfig();
+    if (!global) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message:
+          "Missing Salesforce Connected App config. Set SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, and SALESFORCE_OAUTH_BASE_URL.",
+      });
+    }
+
+    const { plugin, secret } = await getSalesforceSecretForOrg(ctx, args.entityId);
+
+    if (!plugin || !secret) {
+      const prev = secret ?? ({} as SalesforceSecret);
+      await ctx.runAction(internal.system.secrets.upsert, {
+        service: "salesforce" as any,
+        entityId: args.entityId,
+        value: {
+          ...prev,
+          oauthBaseUrl: global.oauthBaseUrl,
+          oauthTokenUrl: `${global.oauthBaseUrl}/services/oauth2/token`,
+          apiVersion: String(prev.apiVersion ?? "57.0").replace(/^v/i, ""),
+        },
+      });
+
+      return { clientId: global.clientId, oauthBaseUrl: global.oauthBaseUrl.replace(/\/$/, "") };
+    }
+
+    return { clientId: global.clientId, oauthBaseUrl: global.oauthBaseUrl.replace(/\/$/, "") };
+  },
+});
+
+export const completeOAuthConnection: any = action({
+  args: {
+    entityId: v.string(),
+    code: v.string(),
+    redirectUri: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const global = getGlobalOAuthAppConfig();
+    if (!global) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message:
+          "Missing Salesforce Connected App config. Set SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, and SALESFORCE_OAUTH_BASE_URL.",
+      });
+    }
+
+    const { secret } = await getSalesforceSecretForOrg(ctx, args.entityId);
+    const prior = (secret ?? ({} as SalesforceSecret)) as SalesforceSecret;
+    const oauthBaseUrl = global.oauthBaseUrl;
+    const clientId = global.clientId;
+    const clientSecret = global.clientSecret;
+
+    const tokenResponse = await fetch(`${oauthBaseUrl}/services/oauth2/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: args.redirectUri,
+        code: args.code,
+      }).toString(),
+    });
+
+    const body = await readJsonOrText(tokenResponse);
+    if (!tokenResponse.ok) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: getErrorMessageFromBody(body) ?? "Failed to exchange code for tokens",
+      });
+    }
+
+    const json = body.json as Record<string, unknown> | null;
+    const accessToken = typeof json?.access_token === "string" ? json.access_token : null;
+    const refreshToken = typeof json?.refresh_token === "string" ? json.refresh_token : null;
+    const instanceUrl = typeof json?.instance_url === "string" ? json.instance_url : null;
+    const identityUrl = typeof json?.id === "string" ? json.id : null;
+    const issuedAtRaw = typeof json?.issued_at === "string" ? json.issued_at : null;
+    const scopeRaw = typeof json?.scope === "string" ? json.scope : null;
+    const issuedAt = issuedAtRaw && /^\d+$/.test(issuedAtRaw) ? Number(issuedAtRaw) : null;
+
+    if (!accessToken || !instanceUrl) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message: "OAuth token response missing access_token/instance_url",
+      });
+    }
+
+    if (!refreshToken) {
+      throw new ConvexError({
+        code: "BAD_REQUEST",
+        message:
+          "Salesforce did not return a refresh token. Ensure the Connected App has refresh_token scope and re-connect with consent.",
+      });
+    }
+
+    let salesforceOrgId: string | null = null;
+    let salesforceUserId: string | null = null;
+    if (identityUrl) {
+      try {
+        const identityResponse = await fetch(identityUrl, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        const identityBody = await readJsonOrText(identityResponse);
+        const identityJson =
+          identityBody.json && typeof identityBody.json === "object" && !Array.isArray(identityBody.json)
+            ? (identityBody.json as Record<string, unknown>)
+            : null;
+
+        const orgId = identityJson?.entity_id;
+        const userId = identityJson?.user_id;
+        salesforceOrgId = typeof orgId === "string" ? orgId : null;
+        salesforceUserId = typeof userId === "string" ? userId : null;
+      } catch (e) {
+        void e;
+      }
+    }
+
+    const { clientId: _cid, clientSecret: _csec, ...priorRest } = prior;
+
+    await ctx.runAction(internal.system.secrets.upsert, {
+      service: "salesforce" as any,
+      entityId: args.entityId,
+      value: {
+        ...priorRest,
+        oauthBaseUrl: oauthBaseUrl.replace(/\/$/, ""),
+        oauthTokenUrl: `${oauthBaseUrl.replace(/\/$/, "")}/services/oauth2/token`,
+        apiVersion: String(prior.apiVersion ?? "57.0").replace(/^v/i, ""),
+
+        accessToken,
+        refreshToken,
+        instanceUrl,
+        identityUrl: identityUrl ?? undefined,
+        salesforceOrgId: salesforceOrgId ?? undefined,
+        salesforceUserId: salesforceUserId ?? undefined,
+        issuedAt: issuedAt ?? undefined,
+        scopes: scopeRaw ?? undefined,
+        connectionStatus: "CONNECTED",
+
+        // New storage
+        defaultUserId: undefined,
+        connections: undefined,
+      },
+    });
+
+    return { ok: true, instanceUrl };
+  },
+});
+
+export const disconnect: any = action({
+  args: {
+    entityId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { plugin, secret } = await getSalesforceSecretForOrg(ctx, args.entityId);
+    if (!plugin || !secret) {
+      return { ok: true };
+    }
+
+    await ctx.runAction(internal.system.secrets.upsert, {
+      service: "salesforce" as any,
+      entityId: args.entityId,
+      value: {
+        ...secret,
+        accessToken: undefined,
+        refreshToken: undefined,
+        instanceUrl: undefined,
+        identityUrl: undefined,
+        salesforceOrgId: undefined,
+        salesforceUserId: undefined,
+        issuedAt: undefined,
+        scopes: undefined,
+        connectionStatus: "DISCONNECTED",
+
+        defaultUserId: undefined,
+        connections: undefined,
+      },
+    });
+
+    return { ok: true };
+  },
+});
 
 async function readJsonOrText(response: Response): Promise<{
   json: unknown | null;
@@ -62,11 +457,196 @@ function getErrorMessageFromBody(body: { json: unknown | null; text: string }) {
   return null;
 }
 
-async function getSalesforceConfig(ctx: any, organizationId: string) {
+function getInvalidFieldNamesFromSalesforceError(body: { json: unknown | null; text: string }): string[] {
+  const names = new Set<string>();
+  const pushFromMessage = (msg: string) => {
+    const m1 = msg.match(/No such column '([^']+)'/i);
+    if (m1?.[1]) names.add(m1[1]);
+    const m2 = msg.match(/Invalid field[:\s]+([A-Za-z0-9_\.]+)/i);
+    if (m2?.[1]) names.add(m2[1]);
+  };
+
+  if (Array.isArray(body.json)) {
+    for (const e of body.json) {
+      if (!e || typeof e !== "object" || Array.isArray(e)) continue;
+      const msg = (e as any).message;
+      if (typeof msg === "string") pushFromMessage(msg);
+    }
+  } else if (body.json && typeof body.json === "object" && !Array.isArray(body.json)) {
+    const msg = (body.json as any).message;
+    if (typeof msg === "string") pushFromMessage(msg);
+  }
+
+  if (typeof body.text === "string" && body.text.trim()) pushFromMessage(body.text);
+
+  return Array.from(names);
+}
+
+function indexOfKeywordAtTopLevel(source: string, keywordWithSpaces: string): number {
+  const upper = source.toUpperCase();
+  const needle = keywordWithSpaces.toUpperCase();
+  let depth = 0;
+  for (let i = 0; i <= upper.length - needle.length; i++) {
+    const ch = upper[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    if (depth !== 0) continue;
+    if (upper.slice(i, i + needle.length) === needle) return i;
+  }
+  return -1;
+}
+
+function splitByTopLevelCommas(source: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth = Math.max(0, depth - 1);
+    else if (ch === "," && depth === 0) {
+      parts.push(source.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(source.slice(start));
+  return parts;
+}
+
+function pruneInvalidFieldsFromSoql(soql: string, invalidFields: string[]): string {
+  if (!invalidFields.length) return soql;
+  const upper = soql.toUpperCase();
+  const selectIdx = upper.indexOf("SELECT ");
+  if (selectIdx < 0) return soql;
+  const fromIdx = indexOfKeywordAtTopLevel(soql, " FROM ");
+  if (fromIdx < 0) return soql;
+
+  const selectClause = soql.slice(selectIdx + "SELECT ".length, fromIdx);
+  const parts = splitByTopLevelCommas(selectClause);
+  const invalidSet = new Set(invalidFields);
+
+  const kept = parts.filter((p) => {
+    const trimmed = p.trim();
+    if (!trimmed) return false;
+    for (const bad of invalidSet) {
+      if (trimmed === bad) return false;
+      if (trimmed.startsWith(`${bad} `)) return false;
+    }
+    return true;
+  });
+
+  const nextClause = kept.map((p) => p.trim()).join(", ");
+  return `${soql.slice(0, selectIdx)}SELECT ${nextClause}${soql.slice(fromIdx)}`;
+}
+
+function pruneInvalidFieldsFromSoqlDeep(soql: string, invalidFields: string[]): string {
+  const upper = soql.toUpperCase();
+  const selectIdx = upper.indexOf("SELECT ");
+  if (selectIdx < 0) return soql;
+  const fromIdx = indexOfKeywordAtTopLevel(soql, " FROM ");
+  if (fromIdx < 0) return soql;
+
+  const prefix = soql.slice(0, selectIdx);
+  const suffix = soql.slice(fromIdx);
+  const selectClause = soql.slice(selectIdx + "SELECT ".length, fromIdx);
+
+  const parts = splitByTopLevelCommas(selectClause);
+  const invalidSet = new Set(invalidFields);
+
+  const kept = parts
+    .map((p) => p.trim())
+    .filter((p) => {
+      if (!p) return false;
+      for (const bad of invalidSet) {
+        if (p === bad) return false;
+        if (p.startsWith(`${bad} `)) return false;
+      }
+      return true;
+    })
+    .map((p) => {
+      const trimmed = p.trim();
+      if (!trimmed.startsWith("(") || !trimmed.endsWith(")")) return trimmed;
+      const inner = trimmed.slice(1, -1).trim();
+      if (!inner.toUpperCase().startsWith("SELECT ")) return trimmed;
+      const prunedInner = pruneInvalidFieldsFromSoqlDeep(inner, invalidFields);
+      return `(${prunedInner})`;
+    });
+
+  const nextClause = kept.join(", ");
+  return `${prefix}SELECT ${nextClause}${suffix}`;
+}
+
+async function sfCreateSObjectWithAutoPrune(
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
+  sobject: string,
+  payload: Record<string, unknown>,
+): Promise<{ json: Record<string, unknown> | null }> {
+  let attempt = 0;
+  let currentPayload: Record<string, unknown> = payload;
+  while (true) {
+    const response = await sfFetchWithAutoRefresh(
+      ctx,
+      { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+      `${cfg.baseApi}/sobjects/${sobject}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(currentPayload),
+      },
+    );
+
+    const body = await readJsonOrText(response);
+    if (response.status === 201) {
+      return {
+        json:
+          body.json && typeof body.json === "object" && !Array.isArray(body.json)
+            ? (body.json as Record<string, unknown>)
+            : null,
+      };
+    }
+
+    const invalidFields = getInvalidFieldNamesFromSalesforceError(body);
+    const canRetry = attempt === 0 && invalidFields.length > 0;
+    if (canRetry) {
+      const nextPayload = { ...currentPayload } as Record<string, unknown>;
+      let removed = 0;
+      for (const field of invalidFields) {
+        if (field in nextPayload) {
+          delete nextPayload[field];
+          removed++;
+        }
+      }
+      if (removed > 0) {
+        attempt++;
+        currentPayload = nextPayload;
+        continue;
+      }
+    }
+
+    throw new ConvexError({
+      code: "BAD_REQUEST",
+      message: getErrorMessageFromBody(body) ?? `Failed to create ${sobject}`,
+    });
+  }
+}
+
+async function getSalesforceConfig(ctx: any, entityId: string) {
+  const global = getGlobalOAuthAppConfig();
+  if (!global) {
+    throw new ConvexError({
+      code: "BAD_REQUEST",
+      message:
+        "Missing Salesforce Connected App config. Set SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, and SALESFORCE_OAUTH_BASE_URL.",
+    });
+  }
+
   const plugin = await ctx.runQuery(
-    internal.system.plugin.getByOrganizationIdAndService,
+    internal.system.plugin.getByEntityIdAndService,
     {
-      organizationId,
+      entityId,
       service: "salesforce" as any,
     },
   );
@@ -88,160 +668,32 @@ async function getSalesforceConfig(ctx: any, organizationId: string) {
     });
   }
 
-  let accessToken = secretData.accessToken ?? "";
-  let instanceUrl = secretData.instanceUrl ?? "";
-
-  const env = (typeof process !== "undefined" ? process.env : undefined) as
-    | Record<string, string | undefined>
-    | undefined;
-
-  const oauthTokenUrl = String(
-    secretData.oauthTokenUrl ??
-      env?.SALESFORCE_OAUTH_TOKEN_URL ??
-      "https://login.salesforce.com/services/oauth2/token",
-  ).trim();
-
-  const clientId = secretData.clientId ?? env?.SALESFORCE_CLIENT_ID;
-  const clientSecret = secretData.clientSecret ?? env?.SALESFORCE_CLIENT_SECRET;
-  const refreshToken = secretData.refreshToken ?? env?.SALESFORCE_REFRESH_TOKEN;
-  const username = secretData.username ?? env?.SALESFORCE_USERNAME;
-  const password = secretData.password ?? env?.SALESFORCE_PASSWORD;
-  const securityToken =
-    secretData.securityToken ?? env?.SALESFORCE_SECURITY_TOKEN;
-
-  const canRefresh = Boolean(
-    refreshToken &&
-      clientId &&
-      clientSecret &&
-      oauthTokenUrl,
-  );
-
-  const canPasswordGrant = Boolean(
-    username &&
-      password &&
-      clientId &&
-      clientSecret &&
-      oauthTokenUrl,
-  );
-
-  if (canRefresh) {
-    console.log("[salesforce] Using refresh_token grant", {
-      organizationId,
-      oauthTokenUrl,
+  const orgConn = getOrgOAuthConnection(secretData);
+  if (!orgConn) {
+    throw new ConvexError({
+      code: "NOT_FOUND",
+      message: "Salesforce is not connected",
     });
-    const response = await fetch(oauthTokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: refreshToken!,
-        client_id: clientId!,
-        client_secret: clientSecret!,
-      }).toString(),
+  }
+
+  const status = String(secretData.connectionStatus ?? orgConn.connectionStatus ?? "").toUpperCase();
+  if (status && status !== "CONNECTED") {
+    throw new ConvexError({
+      code: "NOT_FOUND",
+      message: "Salesforce is not connected",
     });
+  }
 
-    const body = await readJsonOrText(response);
-    if (!response.ok) {
-      console.error("[salesforce] refresh_token grant failed", {
-        organizationId,
-        status: response.status,
-        message: getErrorMessageFromBody(body),
-      });
-      throw new ConvexError({
-        code: "BAD_REQUEST",
-        message:
-          getErrorMessageFromBody(body) ?? "Failed to refresh Salesforce token",
-      });
-    }
+  let accessToken = String(orgConn.accessToken ?? "");
+  let instanceUrl = String(orgConn.instanceUrl ?? "");
+  const refreshToken = String(orgConn.refreshToken ?? "").trim();
 
-    if (body.json && typeof body.json === "object" && !Array.isArray(body.json)) {
-      const json = body.json as Record<string, unknown>;
-      const nextToken = json.access_token;
-      const nextInstanceUrl = json.instance_url;
-
-      if (typeof nextToken === "string" && nextToken.trim()) {
-        accessToken = nextToken;
-      }
-      if (typeof nextInstanceUrl === "string" && nextInstanceUrl.trim()) {
-        instanceUrl = nextInstanceUrl;
-      }
-
-      await ctx.runAction(internal.system.secrets.upsert, {
-        service: "salesforce" as any,
-        organizationId,
-        value: {
-          ...secretData,
-          accessToken,
-          instanceUrl,
-        },
-      });
-    }
-  } else if (canPasswordGrant) {
-    console.log("[salesforce] Using password grant", {
-      organizationId,
-      oauthTokenUrl,
-      hasSecurityToken: Boolean(securityToken),
-    });
-    const passwordForGrant =
-      password && securityToken && !password.endsWith(securityToken)
-        ? `${password}${securityToken}`
-        : password;
-
-    const response = await fetch(oauthTokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        grant_type: "password",
-        username: username!,
-        password: passwordForGrant!,
-        client_id: clientId!,
-        client_secret: clientSecret!,
-      }).toString(),
-    });
-
-    const body = await readJsonOrText(response);
-    if (!response.ok) {
-      console.error("[salesforce] password grant failed", {
-        organizationId,
-        status: response.status,
-        message: getErrorMessageFromBody(body),
-      });
-      throw new ConvexError({
-        code: "BAD_REQUEST",
-        message:
-          getErrorMessageFromBody(body) ??
-          "Failed to fetch Salesforce access token (password grant)",
-      });
-    }
-
-    if (body.json && typeof body.json === "object" && !Array.isArray(body.json)) {
-      const json = body.json as Record<string, unknown>;
-      const nextToken = json.access_token;
-      const nextInstanceUrl = json.instance_url;
-
-      if (typeof nextToken === "string" && nextToken.trim()) {
-        accessToken = nextToken;
-      }
-      if (typeof nextInstanceUrl === "string" && nextInstanceUrl.trim()) {
-        instanceUrl = nextInstanceUrl;
-      }
-
-      if (accessToken && instanceUrl) {
-        await ctx.runAction(internal.system.secrets.upsert, {
-          service: "salesforce" as any,
-          organizationId,
-          value: {
-            ...secretData,
-            accessToken,
-            instanceUrl,
-          },
-        });
-      }
-    }
+  // We do not proactively refresh on every request.
+  // If we have no accessToken yet but do have a refresh token, get an initial access token once.
+  if (!accessToken.trim() && refreshToken) {
+    const refreshed = await refreshSalesforceAccessToken(ctx, entityId);
+    accessToken = refreshed.accessToken;
+    instanceUrl = refreshed.instanceUrl;
   }
 
   if (!accessToken || !instanceUrl) {
@@ -254,6 +706,7 @@ async function getSalesforceConfig(ctx: any, organizationId: string) {
   const apiVersion = String(secretData.apiVersion ?? "57.0").replace(/^v/i, "");
 
   return {
+    entityId,
     accessToken,
     instanceUrl: instanceUrl.replace(/\/$/, ""),
     apiVersion,
@@ -271,15 +724,179 @@ async function getSalesforceConfig(ctx: any, organizationId: string) {
   };
 }
 
+async function refreshSalesforceAccessToken(
+  ctx: any,
+  entityId: string,
+): Promise<{ accessToken: string; instanceUrl: string }> {
+  const global = getGlobalOAuthAppConfig();
+  if (!global) {
+    throw new ConvexError({
+      code: "BAD_REQUEST",
+      message:
+        "Missing Salesforce Connected App config. Set SALESFORCE_CLIENT_ID, SALESFORCE_CLIENT_SECRET, and SALESFORCE_OAUTH_BASE_URL.",
+    });
+  }
+
+  const { plugin, secret } = await getSalesforceSecretForOrg(ctx, entityId);
+  if (!plugin || !secret) {
+    throw new ConvexError({
+      code: "NOT_FOUND",
+      message: "Salesforce is not connected",
+    });
+  }
+
+  const orgConn = getOrgOAuthConnection(secret);
+  if (!orgConn) {
+    throw new ConvexError({
+      code: "NOT_FOUND",
+      message: "Salesforce is not connected",
+    });
+  }
+
+  const status = String(secret.connectionStatus ?? orgConn.connectionStatus ?? "").toUpperCase();
+  if (status && status !== "CONNECTED") {
+    throw new ConvexError({
+      code: "NOT_FOUND",
+      message: "Salesforce is not connected",
+    });
+  }
+
+  const oauthBaseUrl = global.oauthBaseUrl;
+  const oauthTokenUrl = `${oauthBaseUrl.replace(/\/$/, "")}/services/oauth2/token`;
+  const refreshToken = String(orgConn.refreshToken ?? "").trim();
+  if (!refreshToken) {
+    throw new ConvexError({
+      code: "NOT_FOUND",
+      message: "Salesforce disconnected. Please reconnect.",
+    });
+  }
+
+  const response = await fetch(oauthTokenUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: global.clientId,
+      client_secret: global.clientSecret,
+    }).toString(),
+  });
+
+  const body = await readJsonOrText(response);
+  if (!response.ok) {
+    console.error("[salesforce] refresh_token grant failed", {
+      entityId,
+      status: response.status,
+      message: getErrorMessageFromBody(body),
+    });
+
+    await ctx.runAction(internal.system.secrets.upsert, {
+      service: "salesforce" as any,
+      entityId,
+      value: {
+        ...secret,
+        accessToken: undefined,
+        instanceUrl: undefined,
+        refreshToken: undefined,
+        connectionStatus: "DISCONNECTED",
+
+        defaultUserId: undefined,
+        connections: undefined,
+      },
+    });
+
+    throw new ConvexError({
+      code: "BAD_REQUEST",
+      message: "Salesforce disconnected. Please reconnect.",
+    });
+  }
+
+  const json = body.json && typeof body.json === "object" && !Array.isArray(body.json)
+    ? (body.json as Record<string, unknown>)
+    : null;
+  const nextToken = typeof json?.access_token === "string" ? json.access_token : "";
+  const nextInstanceUrl = typeof json?.instance_url === "string" ? json.instance_url : "";
+  if (!nextToken.trim() || !nextInstanceUrl.trim()) {
+    throw new ConvexError({
+      code: "BAD_REQUEST",
+      message: "Salesforce refresh response missing access_token/instance_url",
+    });
+  }
+
+  await ctx.runAction(internal.system.secrets.upsert, {
+    service: "salesforce" as any,
+    entityId,
+    value: {
+      ...secret,
+      oauthBaseUrl: oauthBaseUrl.replace(/\/$/, ""),
+      oauthTokenUrl,
+      refreshToken: String(secret.refreshToken ?? "").trim() ? secret.refreshToken : orgConn.refreshToken,
+      accessToken: nextToken,
+      instanceUrl: nextInstanceUrl,
+      connectionStatus: "CONNECTED",
+
+      defaultUserId: undefined,
+      connections: undefined,
+    },
+  });
+
+  return { accessToken: nextToken, instanceUrl: nextInstanceUrl };
+}
+
+async function sfFetchWithAutoRefresh(
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string },
+  url: string,
+  init: RequestInit,
+) {
+  const doFetch = async (token: string) => {
+    const headers = {
+      ...(init.headers ?? {}),
+      Authorization: `Bearer ${token}`,
+    } as Record<string, string>;
+    return await fetch(url, {
+      ...init,
+      headers,
+    });
+  };
+
+  let response = await doFetch(cfg.accessToken);
+  if (response.status !== 401) return response;
+
+  const prevInstanceUrl = cfg.instanceUrl;
+  const refreshed = await refreshSalesforceAccessToken(ctx, cfg.entityId);
+  cfg.accessToken = refreshed.accessToken;
+  cfg.instanceUrl = refreshed.instanceUrl;
+  const safeOldBase = String(prevInstanceUrl ?? "").replace(/\/$/, "");
+  const safeNewBase = String(refreshed.instanceUrl ?? "").replace(/\/$/, "");
+  const retryUrl = safeOldBase && safeNewBase && url.startsWith(safeOldBase)
+    ? `${safeNewBase}${url.slice(safeOldBase.length)}`
+    : url;
+  if (retryUrl === url) {
+    response = await doFetch(refreshed.accessToken);
+  } else {
+    response = await fetch(retryUrl, {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        Authorization: `Bearer ${refreshed.accessToken}`,
+      } as Record<string, string>,
+    });
+  }
+  return response;
+}
+
 export const getWebhookUrls = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         service: "salesforce" as any,
       },
     );
@@ -305,16 +922,16 @@ export const getWebhookUrls = action({
 
 export const setWebhookUrls = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     webhookUrlCreated: v.optional(v.string()),
     webhookUrlEscalated: v.optional(v.string()),
     webhookUrlResolved: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         service: "salesforce" as any,
       },
     );
@@ -335,7 +952,7 @@ export const setWebhookUrls = action({
     const webhookUrlResolved = String(args.webhookUrlResolved ?? "").trim();
     await ctx.runAction(internal.system.secrets.upsert, {
       service: "salesforce" as any,
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       value: {
         ...secretData,
         webhookUrlCreated: webhookUrlCreated || undefined,
@@ -348,7 +965,7 @@ export const setWebhookUrls = action({
 
 export const sendWebhookEvent = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     event: v.string(),
     conversationId: v.optional(v.string()),
     threadId: v.optional(v.string()),
@@ -356,9 +973,9 @@ export const sendWebhookEvent = action({
   },
   handler: async (ctx, args) => {
     const plugin = await ctx.runQuery(
-      internal.system.plugin.getByOrganizationIdAndService,
+      internal.system.plugin.getByEntityIdAndService,
       {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         service: "salesforce" as any,
       },
     );
@@ -389,7 +1006,7 @@ export const sendWebhookEvent = action({
 
     const payload = {
       event: args.event,
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       conversationId: args.conversationId ?? null,
       threadId: args.threadId ?? null,
       caseId: args.caseId ?? null,
@@ -408,7 +1025,7 @@ export const sendWebhookEvent = action({
       if (!response.ok) {
         const body = await readJsonOrText(response);
         console.error("[salesforce] webhook failed", {
-          organizationId: args.organizationId,
+          entityId: args.entityId,
           event: args.event,
           status: response.status,
           message: getErrorMessageFromBody(body),
@@ -416,7 +1033,7 @@ export const sendWebhookEvent = action({
       }
     } catch (error) {
       console.error("[salesforce] webhook failed", {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         event: args.event,
         error,
       });
@@ -428,21 +1045,21 @@ export const sendWebhookEvent = action({
 
 export const verifyConnection = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     console.log("[salesforce] verifyConnection called", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
     });
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     console.log("[salesforce] verifyConnection resolved config", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       instanceUrl: cfg.instanceUrl,
       apiVersion: cfg.apiVersion,
     });
 
-    await sfQuery(cfg, "SELECT Id FROM Organization LIMIT 1");
+    await sfQuery(ctx, cfg, "SELECT Id FROM Organization LIMIT 1");
 
     return {
       ok: true,
@@ -453,60 +1070,80 @@ export const verifyConnection = action({
 });
 
 async function sfGetCaseNumberById(
-  cfg: { accessToken: string; baseApi: string },
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
   caseId: string,
 ): Promise<string | null> {
   const soql = `SELECT Id, CaseNumber FROM Case WHERE Id='${caseId.replace(/'/g, "\\'")}'`;
-  const data = (await sfQuery(cfg, soql)) as any;
+  const data = (await sfQuery(ctx, cfg, soql)) as any;
   const rec = Array.isArray(data?.records) ? data.records[0] : null;
   const caseNumber = rec?.CaseNumber;
   return typeof caseNumber === "string" && caseNumber.trim() ? caseNumber : null;
 }
 
 async function sfQuery(
-  cfg: { accessToken: string; baseApi: string },
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
   soql: string,
 ) {
-  const url = `${cfg.baseApi}/query/?q=${encodeURIComponent(soql)}`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${cfg.accessToken}`,
-      "Content-Type": "application/json",
-    },
-  });
+  let attempt = 0;
+  let currentSoql = soql;
+  while (true) {
+    const url = `${cfg.baseApi}/query/?q=${encodeURIComponent(currentSoql)}`;
+    const response = await sfFetchWithAutoRefresh(
+      ctx,
+      { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+      url,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
 
-  const body = await readJsonOrText(response);
-  if (!response.ok) {
+    const body = await readJsonOrText(response);
+    if (response.ok) return body.json;
+
+    const invalidFields = getInvalidFieldNamesFromSalesforceError(body);
+    const canRetry = attempt === 0 && invalidFields.length > 0;
+    if (canRetry) {
+      const pruned = pruneInvalidFieldsFromSoqlDeep(currentSoql, invalidFields);
+      if (pruned !== currentSoql) {
+        attempt++;
+        currentSoql = pruned;
+        continue;
+      }
+    }
+
     throw new ConvexError({
       code: "BAD_REQUEST",
       message: getErrorMessageFromBody(body) ?? "Salesforce request failed",
     });
   }
-
-  return body.json;
 }
 
 async function sfGetQueueIdByName(
-  cfg: { accessToken: string; baseApi: string },
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
   queueName: string,
 ): Promise<string | null> {
   const safe = queueName.replace(/'/g, "\\'");
   const soql = `SELECT Id FROM Group WHERE Type='Queue' AND Name='${safe}' LIMIT 1`;
-  const data = (await sfQuery(cfg, soql)) as any;
+  const data = (await sfQuery(ctx, cfg, soql)) as any;
   const rec = Array.isArray(data?.records) ? data.records[0] : null;
   const id = rec?.Id;
   return typeof id === "string" && id.trim() ? id : null;
 }
 
 async function sfFindContactIdByEmail(
-  cfg: { accessToken: string; baseApi: string },
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
   email: string,
 ): Promise<string | null> {
   const safe = email.replace(/'/g, "\\'");
-  const soql =
-    `SELECT Id FROM Contact WHERE Email='${safe}' ORDER BY LastModifiedDate DESC LIMIT 1`;
-  const data = (await sfQuery(cfg, soql)) as any;
+  const soql = `SELECT Id FROM Contact WHERE Email='${safe}' ORDER BY LastModifiedDate DESC LIMIT 1`;
+  const data = (await sfQuery(ctx, cfg, soql)) as any;
   const rec = Array.isArray(data?.records) ? data.records[0] : null;
   const id = rec?.Id;
   return typeof id === "string" && id.trim() ? id : null;
@@ -531,7 +1168,8 @@ function splitName(fullName: string | undefined): {
 }
 
 async function sfCreateContact(
-  cfg: { accessToken: string; baseApi: string },
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
   args: { name?: string; email?: string },
 ): Promise<string> {
   const { firstName, lastName } = splitName(args.name);
@@ -541,14 +1179,18 @@ async function sfCreateContact(
   if (firstName) payload.FirstName = firstName;
   if (args.email) payload.Email = args.email;
 
-  const response = await fetch(`${cfg.baseApi}/sobjects/Contact`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${cfg.accessToken}`,
-      "Content-Type": "application/json",
+  const response = await sfFetchWithAutoRefresh(
+    ctx,
+    { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+    `${cfg.baseApi}/sobjects/Contact`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+  );
 
   const body = await readJsonOrText(response);
   if (response.status !== 201) {
@@ -570,21 +1212,22 @@ async function sfCreateContact(
 }
 
 async function sfGetOrCreateContactId(
-  cfg: { accessToken: string; baseApi: string },
+  ctx: any,
+  cfg: { entityId: string; accessToken: string; instanceUrl: string; baseApi: string },
   args: { name?: string; email?: string },
 ): Promise<string | null> {
   const email = String(args.email ?? "").trim();
   if (!email) return null;
 
-  const existing = await sfFindContactIdByEmail(cfg, email);
+  const existing = await sfFindContactIdByEmail(ctx, cfg, email);
   if (existing) return existing;
 
-  return await sfCreateContact(cfg, { name: args.name, email });
+  return await sfCreateContact(ctx, cfg, { name: args.name, email });
 }
 
 export const createCase = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     subject: v.string(),
     status: v.optional(v.string()),
     origin: v.optional(v.string()),
@@ -598,30 +1241,34 @@ export const createCase = action({
   },
   handler: async (ctx, args) => {
     console.log("[salesforce] createCase called", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       subject: args.subject,
       status: args.status ?? "New",
       origin: args.origin ?? "Web",
       hasOwnerId: Boolean(args.ownerId),
       hasContactId: Boolean(args.contactId),
     });
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     console.log("[salesforce] createCase using instance", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       instanceUrl: cfg.instanceUrl,
       apiVersion: cfg.apiVersion,
       baseApi: cfg.baseApi,
     });
 
+    const commentText = String(args.comment ?? "Case Created via chatbot").trim();
+    const suppliedDescription = String(args.description ?? "").trim();
+    const combinedDescription = [suppliedDescription, commentText].filter(Boolean).join("\n\n");
+
     const payload: Record<string, unknown> = {
       Subject: args.subject,
       Status: args.status ?? "New",
       Origin: args.origin ?? "Web",
-      Comment__c: args.comment ?? "Case Created via chatbot",
     };
 
-    if (args.description) payload.Description = args.description;
+    if (combinedDescription) payload.Description = combinedDescription;
+    if (commentText) payload.Comment__c = commentText;
 
     const suppliedEmail = String(args.contactEmail ?? "").trim();
     const suppliedName = String(args.contactName ?? "").trim();
@@ -639,11 +1286,11 @@ export const createCase = action({
       const queueName = String(cfg.openQueueName ?? "Open Queue").trim();
       if (queueName) {
         try {
-          const resolved = await sfGetQueueIdByName(cfg, queueName);
+          const resolved = await sfGetQueueIdByName(ctx, cfg, queueName);
           if (resolved) ownerId = resolved;
         } catch (error) {
           console.error("[salesforce] Failed to resolve queue OwnerId by name", {
-            organizationId: args.organizationId,
+            entityId: args.entityId,
             queueName,
             error,
           });
@@ -654,14 +1301,14 @@ export const createCase = action({
     let contactId: string | undefined = args.contactId ?? cfg.contactId;
     if (!contactId && (suppliedEmail || suppliedName)) {
       try {
-        const resolvedContactId = await sfGetOrCreateContactId(cfg, {
+        const resolvedContactId = await sfGetOrCreateContactId(ctx, cfg, {
           name: suppliedName || undefined,
           email: suppliedEmail || undefined,
         });
         if (resolvedContactId) contactId = resolvedContactId;
       } catch (error) {
         console.error("[salesforce] Failed to resolve/create Contact", {
-          organizationId: args.organizationId,
+          entityId: args.entityId,
           suppliedEmail: suppliedEmail || null,
           error,
         });
@@ -671,52 +1318,34 @@ export const createCase = action({
     if (ownerId) payload.OwnerId = ownerId;
     if (contactId) payload.ContactId = contactId;
 
-    const response = await fetch(`${cfg.baseApi}/sobjects/Case`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const body = await readJsonOrText(response);
-    if (response.status !== 201) {
-      console.error("[salesforce] createCase failed", {
-        organizationId: args.organizationId,
-        status: response.status,
-        message: getErrorMessageFromBody(body),
-      });
-      throw new ConvexError({
-        code: "BAD_REQUEST",
-        message: getErrorMessageFromBody(body) ?? "Failed to create case",
-      });
-    }
-
-    const json = body.json as Record<string, unknown> | null;
+    const { json } = await sfCreateSObjectWithAutoPrune(ctx, cfg, "Case", payload);
 
     const id = typeof json?.id === "string" ? json.id : null;
-    const caseNumber = id ? await sfGetCaseNumberById(cfg, id) : null;
+    const caseNumber = id ? await sfGetCaseNumberById(ctx, cfg, id) : null;
 
     if (id && args.caseCommentBody) {
       try {
-        const commentResponse = await fetch(`${cfg.baseApi}/sobjects/CaseComment`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${cfg.accessToken}`,
-            "Content-Type": "application/json",
+        const commentResponse = await sfFetchWithAutoRefresh(
+          ctx,
+          { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+          `${cfg.baseApi}/sobjects/CaseComment`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              ParentId: id,
+              CommentBody: args.caseCommentBody,
+              IsPublished: false,
+            }),
           },
-          body: JSON.stringify({
-            ParentId: id,
-            CommentBody: args.caseCommentBody,
-            IsPublished: false,
-          }),
-        });
+        );
 
         if (commentResponse.status !== 201) {
           const commentBody = await readJsonOrText(commentResponse);
           console.error("[salesforce] createCase failed to create CaseComment", {
-            organizationId: args.organizationId,
+            entityId: args.entityId,
             status: commentResponse.status,
             message: getErrorMessageFromBody(commentBody),
           });
@@ -737,12 +1366,12 @@ export const createCase = action({
 
 export const addInternalCaseComment = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     caseNumberOrId: v.string(),
     commentBody: v.string(),
   },
   handler: async (ctx, args) => {
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     const raw = String(args.caseNumberOrId ?? "").trim();
     if (!raw) {
@@ -763,7 +1392,7 @@ export const addInternalCaseComment = action({
     } else {
       const soql =
         `SELECT Id FROM Case WHERE CaseNumber='${raw.replace(/'/g, "\\'")}'`;
-      const data = (await sfQuery(cfg, soql)) as any;
+      const data = (await sfQuery(ctx, cfg, soql)) as any;
       const rec = Array.isArray(data?.records) ? data.records[0] : null;
       caseId = typeof rec?.Id === "string" ? rec.Id : null;
 
@@ -782,18 +1411,22 @@ export const addInternalCaseComment = action({
       });
     }
 
-    const response = await fetch(`${cfg.baseApi}/sobjects/CaseComment`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        "Content-Type": "application/json",
+    const response = await sfFetchWithAutoRefresh(
+      ctx,
+      { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+      `${cfg.baseApi}/sobjects/CaseComment`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ParentId: caseId,
+          CommentBody: args.commentBody,
+          IsPublished: false,
+        }),
       },
-      body: JSON.stringify({
-        ParentId: caseId,
-        CommentBody: args.commentBody,
-        IsPublished: false,
-      }),
-    });
+    );
 
     const body = await readJsonOrText(response);
     if (response.status !== 201) {
@@ -811,17 +1444,17 @@ export const addInternalCaseComment = action({
 
 export const getCaseByNumber = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     caseNumber: v.string(),
   },
   handler: async (ctx, args) => {
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     const soql =
       `SELECT Id, CaseNumber, Subject, Status, Priority ` +
       `FROM Case WHERE CaseNumber='${args.caseNumber.replace(/'/g, "\\'")}'`;
 
-    const data = (await sfQuery(cfg, soql)) as any;
+    const data = (await sfQuery(ctx, cfg, soql)) as any;
     const rec = Array.isArray(data?.records) ? data.records[0] : null;
 
     if (!rec) {
@@ -840,18 +1473,18 @@ export const getCaseByNumber = action({
 
 export const getCaseCommentsByNumber = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     caseNumber: v.string(),
   },
   handler: async (ctx, args) => {
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     const soql =
       `SELECT Id, CaseNumber, Comment__c, ` +
       `(SELECT Id, CommentBody, CreatedDate, CreatedBy.Name FROM CaseComments) ` +
       `FROM Case WHERE CaseNumber='${args.caseNumber.replace(/'/g, "\\'")}'`;
 
-    const data = (await sfQuery(cfg, soql)) as any;
+    const data = (await sfQuery(ctx, cfg, soql)) as any;
     const rec = Array.isArray(data?.records) ? data.records[0] : null;
 
     if (!rec) {
@@ -881,13 +1514,13 @@ export const getCaseCommentsByNumber = action({
 
 export const listCasesByAccount = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     accountId: v.optional(v.string()),
     status: v.optional(v.string()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     const accountId = args.accountId ?? cfg.accountId;
     if (!accountId) {
@@ -917,7 +1550,7 @@ export const listCasesByAccount = action({
       `(SELECT Id, CaseNumber, Subject, Status, Priority, ContactId FROM Cases${casesWhere}) ` +
       `FROM Account WHERE Id='${accountId.replace(/'/g, "\\'")}'`;
 
-    const data = (await sfQuery(cfg, soql)) as any;
+    const data = (await sfQuery(ctx, cfg, soql)) as any;
     const acc = Array.isArray(data?.records) ? data.records[0] : null;
     if (!acc) {
       return { account: null, cases: [], raw_count: 0 };
@@ -948,15 +1581,15 @@ export const listCasesByAccount = action({
 
 export const escalateCaseByNumber = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     caseNumber: v.string(),
   },
   handler: async (ctx, args) => {
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     const soql =
       `SELECT Id FROM Case WHERE CaseNumber='${args.caseNumber.replace(/'/g, "\\'")}'`;
-    const data = (await sfQuery(cfg, soql)) as any;
+    const data = (await sfQuery(ctx, cfg, soql)) as any;
     const rec = Array.isArray(data?.records) ? data.records[0] : null;
 
     const caseId = rec?.Id;
@@ -967,14 +1600,18 @@ export const escalateCaseByNumber = action({
       });
     }
 
-    const response = await fetch(`${cfg.baseApi}/sobjects/Case/${caseId}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        "Content-Type": "application/json",
+    const response = await sfFetchWithAutoRefresh(
+      ctx,
+      { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+      `${cfg.baseApi}/sobjects/Case/${caseId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ IsEscalated: true }),
       },
-      body: JSON.stringify({ IsEscalated: true }),
-    });
+    );
 
     if (response.status === 204) {
       return { ok: true };
@@ -990,16 +1627,16 @@ export const escalateCaseByNumber = action({
 
 export const closeCaseByNumber = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     caseNumber: v.string(),
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const cfg = await getSalesforceConfig(ctx, args.organizationId);
+    const cfg = await getSalesforceConfig(ctx, args.entityId);
 
     const soql =
       `SELECT Id FROM Case WHERE CaseNumber='${args.caseNumber.replace(/'/g, "\\'")}'`;
-    const data = (await sfQuery(cfg, soql)) as any;
+    const data = (await sfQuery(ctx, cfg, soql)) as any;
     const rec = Array.isArray(data?.records) ? data.records[0] : null;
 
     const caseId = rec?.Id;
@@ -1011,14 +1648,18 @@ export const closeCaseByNumber = action({
     }
 
     const nextStatus = String(args.status ?? cfg.closeStatus ?? "Closed").trim();
-    const response = await fetch(`${cfg.baseApi}/sobjects/Case/${caseId}`, {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${cfg.accessToken}`,
-        "Content-Type": "application/json",
+    const response = await sfFetchWithAutoRefresh(
+      ctx,
+      { entityId: cfg.entityId, accessToken: cfg.accessToken, instanceUrl: cfg.instanceUrl },
+      `${cfg.baseApi}/sobjects/Case/${caseId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ Status: nextStatus }),
       },
-      body: JSON.stringify({ Status: nextStatus }),
-    });
+    );
 
     if (response.status === 204) {
       return { ok: true };

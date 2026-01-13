@@ -20,27 +20,27 @@ const deriveSolidPrimary = (primary: string) => {
 
 interface Props {
   searchParams: Promise<{
-    organizationId: string;
+    entityId: string;
     chatbotId?: string;
   }>
 };
 
 const Page = ({ searchParams }: Props) => {
-  const { organizationId, chatbotId } = use(searchParams);
+  const { entityId, chatbotId } = use(searchParams);
   const [isReady, setIsReady] = useState(false);
   const [appliedColor, setAppliedColor] = useState<string | null>(null);
   const [appliedLauncherIconUrl, setAppliedLauncherIconUrl] = useState<string | null>(null);
 
-  const cacheSuffix = `${organizationId}-${chatbotId ?? "default"}`;
+  const cacheSuffix = `${entityId}-${chatbotId ?? "default"}`;
   const colorCacheKey = `widget-color-${cacheSuffix}`;
   const launcherIconCacheKey = `widget-launcher-icon-${cacheSuffix}`;
 
   // Pre-fetch appearance settings to apply color immediately
   const appearanceSettings = useQuery(
     api.public.widgetSettings.getChatbotSettings,
-    organizationId
+    entityId
       ? {
-          organizationId,
+          entityId,
           ...(chatbotId ? { chatbotId } : {}),
         }
       : "skip"
@@ -50,7 +50,7 @@ const Page = ({ searchParams }: Props) => {
     setIsReady(false);
     setAppliedColor(null);
     setAppliedLauncherIconUrl(null);
-  }, [organizationId, chatbotId]);
+  }, [entityId, chatbotId]);
 
   // Apply cached color immediately on mount (before query returns)
   useEffect(() => {
@@ -120,7 +120,7 @@ const Page = ({ searchParams }: Props) => {
   }, [appliedColor, appearanceSettings]);
 
   useEffect(() => {
-    if (!organizationId) return;
+    if (!entityId) return;
     if (!appliedColor && !appliedLauncherIconUrl) return;
 
     window.parent.postMessage(
@@ -133,7 +133,7 @@ const Page = ({ searchParams }: Props) => {
       },
       "*"
     );
-  }, [organizationId, chatbotId, appliedColor, appliedLauncherIconUrl]);
+  }, [entityId, chatbotId, appliedColor, appliedLauncherIconUrl]);
 
   // Show nothing briefly while we check for cached color
   if (!isReady && !appliedColor) {
@@ -141,7 +141,7 @@ const Page = ({ searchParams }: Props) => {
   }
 
   return (
-    <WidgetView organizationId={organizationId} chatbotId={chatbotId} />
+    <WidgetView entityId={entityId} chatbotId={chatbotId} />
   );
 };
 

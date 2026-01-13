@@ -8,12 +8,12 @@ import { paginationOptsValidator } from "convex/server";
 ------------------------------------------------- */
 export const create = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
     if (!orgId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
@@ -26,7 +26,7 @@ export const create = mutation({
     const now = Date.now();
 
     const id = await ctx.db.insert("knowledgeBases", {
-      organizationId: orgId,
+      entityId: orgId,
       name: args.name,
       description: args.description,
       knowledgeBaseId,
@@ -45,7 +45,7 @@ export const create = mutation({
 ------------------------------------------------- */
 export const update = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
@@ -65,7 +65,7 @@ export const update = mutation({
       });
     }
 
-    if (kb.organizationId !== args.organizationId) {
+    if (kb.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
@@ -85,7 +85,7 @@ export const update = mutation({
 ------------------------------------------------- */
 export const deleteKnowledgeBase = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.id("knowledgeBases"),
   },
   handler: async (ctx, args) => {
@@ -98,7 +98,7 @@ export const deleteKnowledgeBase = mutation({
       });
     }
 
-    if (kb.organizationId !== args.organizationId) {
+    if (kb.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
@@ -129,19 +129,19 @@ export const deleteKnowledgeBase = mutation({
 ------------------------------------------------- */
 export const list = query({
   args: {
-    organizationId: v.optional(v.string()),
+    entityId: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
-    if (!args.organizationId) {
-      // Return empty results if no organizationId provided
+    if (!args.entityId) {
+      // Return empty results if no entityId provided
       return { page: [], isDone: true, continueCursor: "" };
     }
 
     return await ctx.db
       .query("knowledgeBases")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId!),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId!),
       )
       .order("desc")
       .paginate(args.paginationOpts);
@@ -153,7 +153,7 @@ export const list = query({
 ------------------------------------------------- */
 export const getOne = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.string(),
   },
   handler: async (ctx, args) => {
@@ -165,7 +165,7 @@ export const getOne = query({
       .unique();
 
     if (!kb) return null;
-    if (kb.organizationId !== args.organizationId) {
+    if (kb.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
@@ -181,12 +181,12 @@ export const getOne = query({
 ------------------------------------------------- */
 export const incrementFileCount = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.id("knowledgeBases"),
   },
   handler: async (ctx, args) => {
     const kb = await ctx.db.get(args.knowledgeBaseId);
-    if (!kb || kb.organizationId !== args.organizationId) {
+    if (!kb || kb.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",
@@ -201,12 +201,12 @@ export const incrementFileCount = mutation({
 
 export const decrementFileCount = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.id("knowledgeBases"),
   },
   handler: async (ctx, args) => {
     const kb = await ctx.db.get(args.knowledgeBaseId);
-    if (!kb || kb.organizationId !== args.organizationId) {
+    if (!kb || kb.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Unauthorized",

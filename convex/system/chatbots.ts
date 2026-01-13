@@ -28,12 +28,12 @@ export const getById = internalQuery({
   },
 });
 
-export const getByOrganizationId = internalQuery({
-  args: { organizationId: v.string() },
+export const getByEntityId = internalQuery({
+  args: { entityId: v.string() },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("chatbots")
-      .withIndex("by_organization_id", (q) => q.eq("organizationId", args.organizationId))
+      .withIndex("by_entity_id", (q) => q.eq("entityId", args.entityId))
       .collect();
   },
 });

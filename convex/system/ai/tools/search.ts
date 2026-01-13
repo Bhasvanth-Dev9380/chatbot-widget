@@ -14,31 +14,51 @@ export const search: any = createTool({
       .describe("The search query to find relevant information")
   }),
   handler: async (ctx: any, args: { query: string }): Promise<string> => {
-    if (!ctx.threadId) {
-      return "Missing thread ID";
-    }
+    try {
+      if (!ctx.threadId) {
+        return "Missing thread ID";
+      }
 
-    const conversation = await ctx.runQuery(
-      internal.system.conversations.getByThreadId,
-      { threadId: ctx.threadId },
-    );
+      const safeRunQuery = async <T>(fn: any, a: any): Promise<T | null> => {
+        try {
+          if (!fn) return null;
+          return (await ctx.runQuery(fn, a)) as T;
+        } catch (error) {
+          console.error("[search tool] runQuery failed", error);
+          return null;
+        }
+      };
 
-    if (!conversation) {
-      return "Conversation not found";
-    }
+      const safeRunMutation = async (fn: any, a: any): Promise<void> => {
+        try {
+          if (!fn) return;
+          await ctx.runMutation(fn, a);
+        } catch (error) {
+          console.error("[search tool] runMutation failed", error);
+        }
+      };
 
-    const orgId = conversation.organizationId;
+      const conversation = await safeRunQuery<any>(
+        internal.system.conversations.getByThreadId,
+        { threadId: ctx.threadId },
+      );
+
+      if (!conversation) {
+        return "Conversation not found";
+      }
+
+      const orgId = conversation.entityId;
 
     // Determine which namespace to use based on chatbot's knowledge base
     let namespace: string = orgId; // Default fallback
 
     if (conversation.chatbotId) {
-      const chatbot = await ctx.runQuery(internal.system.chatbots.getById, {
+      const chatbot = await safeRunQuery<any>(internal.system.chatbots.getById, {
         id: conversation.chatbotId,
       });
 
       if (chatbot?.knowledgeBaseId) {
-        const knowledgeBase = await ctx.runQuery(internal.system.knowledgeBases.getById, {
+        const knowledgeBase = await safeRunQuery<any>(internal.system.knowledgeBases.getById, {
           id: chatbot.knowledgeBaseId,
         });
 
@@ -48,10 +68,11 @@ export const search: any = createTool({
       }
     }
 
-    const deletedStorageIds: unknown[] = await ctx.runQuery(
-      (internal as any).system.deletedFiles.listByOrganizationId,
-      { organizationId: orgId },
-    );
+    const deletedStorageIds: unknown[] =
+      (await safeRunQuery<unknown[]>(
+        (internal as any).system?.deletedFiles?.listByEntityId,
+        { entityId: orgId },
+      )) ?? [];
     const deletedStorageIdSet: Set<string> = new Set(
       deletedStorageIds.map((id) => String(id)),
     );
@@ -64,8 +85,8 @@ export const search: any = createTool({
 
     const estimatedEmbeddingTokens = Math.ceil(query.length / 4);
     if (estimatedEmbeddingTokens > 0) {
-      await ctx.runMutation((internal as any).system.tokenUsage.record, {
-        organizationId: orgId,
+      await safeRunMutation((internal as any).system?.tokenUsage?.record, {
+        entityId: orgId,
         provider: "openai",
         model: "text-embedding-3-small",
         kind: "rag_search_query_embedding",
@@ -128,17 +149,23 @@ export const search: any = createTool({
     };
 
     const runSearch = async (vectorScoreThreshold: number) => {
-      const res: any = await rag.search(ctx, {
-        namespace: namespace,
-        query,
-        limit: 20,
-        vectorScoreThreshold,
-      });
+      let res: any;
+      try {
+        res = await rag.search(ctx, {
+          namespace: namespace,
+          query,
+          limit: 20,
+          vectorScoreThreshold,
+        });
+      } catch (error) {
+        console.error("[search tool] rag.search failed", error);
+        return { res: null, contextText: "" };
+      }
 
       // Estimated vector read usage: rough approximation.
       // We assume up to `limit` embedding vectors are accessed.
-      await ctx.runMutation((internal as any).system.convexUsageEstimated.record, {
-        organizationId: orgId,
+      await safeRunMutation((internal as any).system?.convexUsageEstimated?.record, {
+        entityId: orgId,
         vectorBytes: 20 * 1536 * 4,
       });
 
@@ -205,19 +232,25 @@ DO:
 
 If the answer genuinely isn't in the search results, say: "I don't have info on that. Want me to connect you with our team?"`;
 
-    const response: any = await generateText({
-      messages: [
-        {
-          role: "system",
-          content: SEARCH_INTERPRETER_PROMPT,
-        },
-        {
-          role: "user",
-          content: `User asked: "${args.query}"\n\n${contextText}`,
-        }
-      ],
-      model: openai("gpt-4o-mini") as any,
-    });
+    let response: any;
+    try {
+      response = await generateText({
+        messages: [
+          {
+            role: "system",
+            content: SEARCH_INTERPRETER_PROMPT,
+          },
+          {
+            role: "user",
+            content: `User asked: "${args.query}"\n\n${contextText}`,
+          },
+        ],
+        model: openai("gpt-4o-mini") as any,
+      });
+    } catch (error) {
+      console.error("[search tool] LLM call failed", error);
+      return "I’m having trouble searching the knowledge base right now. Want me to connect you with our team?";
+    }
 
     const usage = (response as any)?.usage;
     const totalTokens =
@@ -226,8 +259,8 @@ If the answer genuinely isn't in the search results, say: "I don't have info on 
         : Math.ceil(String(response?.text ?? "").length / 4);
 
     if (totalTokens > 0) {
-      await ctx.runMutation((internal as any).system.tokenUsage.record, {
-        organizationId: orgId,
+      await safeRunMutation((internal as any).system?.tokenUsage?.record, {
+        entityId: orgId,
         provider: "openai",
         model: "gpt-4o-mini",
         kind: "kb_search_interpreter",
@@ -244,5 +277,9 @@ If the answer genuinely isn't in the search results, say: "I don't have info on 
     // DO NOT call saveMessage here - agent handles saving in v0.3.2
     // Just return the result
     return response.text;
+    } catch (error) {
+      console.error("[search tool] Unexpected failure", error);
+      return "I’m having trouble searching the knowledge base right now. Want me to connect you with our team?";
+    }
   },
 });

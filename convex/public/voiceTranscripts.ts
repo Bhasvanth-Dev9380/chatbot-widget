@@ -27,7 +27,7 @@ export const save = mutation({
       throw new ConvexError("Invalid session");
     }
 
-    const organizationId = contactSession.organizationId;
+    const entityId = contactSession.entityId;
 
     // Find the conversation for this contact session (if exists)
     const conversation = await ctx.db
@@ -49,7 +49,7 @@ export const save = mutation({
 
     // Save the voice transcript
     const transcriptId = await ctx.db.insert("voiceTranscripts", {
-      organizationId,
+      entityId,
       conversationId: conversation?._id,
       contactSessionId: args.contactSessionId,
       chatbotId: chatbotDocId,

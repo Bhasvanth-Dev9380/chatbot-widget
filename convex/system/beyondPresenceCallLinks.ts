@@ -36,7 +36,7 @@ export const findLatestUnlinkedConversationForChatbot = internalQuery({
 
 export const findLatestUnlinkedConversationForChatbots = internalQuery({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     chatbotIds: v.array(v.id("chatbots")),
     createdAfter: v.number(),
   },
@@ -46,8 +46,8 @@ export const findLatestUnlinkedConversationForChatbots = internalQuery({
 
     const candidates = await ctx.db
       .query("conversations")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .order("desc")
       .take(50);
@@ -122,7 +122,7 @@ export const createConversationAndLink = internalMutation({
   args: {
     callId: v.string(),
     threadId: v.string(),
-    organizationId: v.string(),
+    entityId: v.string(),
     chatbotId: v.id("chatbots"),
     userName: v.optional(v.string()),
   },
@@ -143,14 +143,14 @@ export const createConversationAndLink = internalMutation({
     const contactSessionId = await ctx.db.insert("contactSessions", {
       name: args.userName?.trim() ? args.userName.trim() : "Video Caller",
       email: "",
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       expiresAt: Date.now() + SESSION_DURATION_MS,
     });
 
     const conversationId = await ctx.db.insert("conversations", {
       contactSessionId,
       status: "unresolved",
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       threadId: args.threadId,
       caseId: generateCaseId(),
       chatbotId: args.chatbotId,

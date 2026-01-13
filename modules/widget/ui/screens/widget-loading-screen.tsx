@@ -3,7 +3,7 @@ import { useState,useEffect } from "react";
 import { useSetAtom, useAtomValue } from "jotai";
 import {  LoaderIcon } from "lucide-react";
 import { chatbotIdAtom, contactSessionIdAtomFamily, errorMessageAtom, 
-  loadingMessageAtom, organizationIdAtom, screenAtom ,vapiSecretsAtom, widgetSettingsAtom, beyondPresenceConfigAtom, type WidgetSettings } from "@/modules/widget/atoms/widget-atoms";
+  loadingMessageAtom, entityIdAtom, screenAtom ,vapiSecretsAtom, widgetSettingsAtom, beyondPresenceConfigAtom, type WidgetSettings } from "@/modules/widget/atoms/widget-atoms";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { api } from "../../../../convex/_generated/api";
 import { useAction,useMutation, useQuery } from "convex/react";
@@ -14,36 +14,36 @@ import { useAction,useMutation, useQuery } from "convex/react";
 type InitStep = "org" | "session" | "settings" | "vapi" | "done";
 
 
-export const WidgetLoadingScreen = ({ organizationId, chatbotId }: { organizationId: string | null, chatbotId?: string | null }
+export const WidgetLoadingScreen = ({ entityId, chatbotId }: { entityId: string | null, chatbotId?: string | null }
 ) => {
   const [step, setStep] = useState<InitStep>("org");
   const [sessionValid, setSessionValid] = useState(false);
 
-  console.log('[WidgetLoadingScreen] Received props:', { organizationId, chatbotId });
+  console.log('[WidgetLoadingScreen] Received props:', { entityId, chatbotId });
 
   const loadingMessage = useAtomValue(loadingMessageAtom);
   const setWidgetSettings = useSetAtom(widgetSettingsAtom);
   const setErrorMessage = useSetAtom(errorMessageAtom);
   const setScreen = useSetAtom(screenAtom);
   const setLoadingMessage = useSetAtom(loadingMessageAtom);
-  const setOrganizationId = useSetAtom(organizationIdAtom);
+  const setEntityId = useSetAtom(entityIdAtom);
   const setChatbotId = useSetAtom(chatbotIdAtom);
 
  const validateOrganizationResult = useQuery(
   api.public.organizations.validate,
-  organizationId ? { organizationId } : "skip"
+  entityId ? { entityId } : "skip"
 );
 
 const setVapiSecrets = useSetAtom(vapiSecretsAtom);
   const setBeyondPresenceConfig = useSetAtom(beyondPresenceConfigAtom);
-  const contactSessionId = useAtomValue(contactSessionIdAtomFamily(organizationId || ""));
+  const contactSessionId = useAtomValue(contactSessionIdAtomFamily(entityId || ""));
 
   // Fetch widget settings immediately for appearance
   const widgetSettings = useQuery(
     api.public.widgetSettings.getChatbotSettings,
-    organizationId
+    entityId
       ? {
-          organizationId,
+          entityId,
           ...(chatbotId ? { chatbotId } : {}),
         }
       : "skip"
@@ -62,8 +62,8 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
 
   setLoadingMessage("Finding organization...");
 
-  if (!organizationId) {
-    setErrorMessage("Organization ID is required");
+  if (!entityId) {
+    setErrorMessage("Entity ID is required");
     setScreen("error");
     return;
   }
@@ -76,7 +76,7 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
 
   // query finished
   if (validateOrganizationResult.valid) {
-    setOrganizationId(organizationId);
+    setEntityId(entityId);
     if (chatbotId) {
       console.log('[WidgetLoadingScreen] Setting chatbotId from URL:', chatbotId);
       setChatbotId(chatbotId);
@@ -92,11 +92,11 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
   }
 }, [
   step,
-  organizationId,
+  entityId,
   validateOrganizationResult,
   setErrorMessage,
   setScreen,
-  setOrganizationId,
+  setEntityId,
   setLoadingMessage,
   chatbotId,
   setChatbotId,
@@ -202,17 +202,17 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
           return;
         }
 
-        if (!organizationId) {
-          setErrorMessage("Organization ID is required");
+        if (!entityId) {
+          setErrorMessage("Entity ID is required");
           setScreen("error");
           return;
         }
 
         setLoadingMessage("Loading voice features...");
-        getVapiSecrets({ organizationId })
+        getVapiSecrets({ entityId })
             .then((secrets) =>{
               setVapiSecrets(secrets);
-              return getBeyondPresenceConfig({ organizationId });
+              return getBeyondPresenceConfig({ entityId });
             })
             .then((config) => {
               setBeyondPresenceConfig(config);
@@ -225,7 +225,7 @@ const setVapiSecrets = useSetAtom(vapiSecretsAtom);
             })
       }, [
         step,
-        organizationId,
+        entityId,
         getVapiSecrets,
         getBeyondPresenceConfig,
         setVapiSecrets,

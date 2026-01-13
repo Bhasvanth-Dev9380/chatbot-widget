@@ -5,15 +5,15 @@ import { Doc, Id } from "../_generated/dataModel";
 /* -------------------------------------------------
    BASIC WIDGET SETTINGS (ADMIN / INTERNAL USE)
 ------------------------------------------------- */
-export const getByOrganizationId = query({
+export const getByEntityId = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("widgetSettings")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .unique();
   },
@@ -64,7 +64,7 @@ type ChatbotSettings = {
 ------------------------------------------------- */
 export const getChatbotSettings = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     chatbotId: v.optional(v.string()),
   },
   handler: async (
@@ -84,7 +84,7 @@ export const getChatbotSettings = query({
 
       if (
         chatbot &&
-        chatbot.organizationId === args.organizationId &&
+        chatbot.entityId === args.entityId &&
         (chatbot as any).isActive !== false
       ) {
         return {
@@ -111,8 +111,8 @@ export const getChatbotSettings = query({
     ----------------------------- */
     const widgetSettingsForSelection = await ctx.db
       .query("widgetSettings")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .unique();
 
@@ -146,8 +146,8 @@ export const getChatbotSettings = query({
     ----------------------------- */
     const activeChatbots = await ctx.db
       .query("chatbots")
-      .withIndex("by_organization_and_active", (q) =>
-        q.eq("organizationId", args.organizationId).eq("isActive", true),
+      .withIndex("by_entity_and_active", (q) =>
+        q.eq("entityId", args.entityId).eq("isActive", true),
       )
       .collect();
 
@@ -180,8 +180,8 @@ export const getChatbotSettings = query({
     ----------------------------- */
     const defaultChatbot = await ctx.db
       .query("chatbots")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId),
       )
       .filter((q) => q.eq(q.field("isDefault"), true))
       .first();
