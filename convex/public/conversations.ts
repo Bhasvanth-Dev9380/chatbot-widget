@@ -81,11 +81,9 @@ export const getMany = query({
     const conversations = await (chatbotDocId
       ? baseQuery
           .filter((q) => q.eq(q.field("chatbotId"), chatbotDocId))
-          .filter((q) => q.neq(q.field("isTranscriptPending"), true))
           .order("desc")
           .paginate(args.paginationOpts)
       : baseQuery
-          .filter((q) => q.neq(q.field("isTranscriptPending"), true))
           .order("desc")
           .paginate(args.paginationOpts));
 
@@ -249,7 +247,7 @@ export const create: any = action({
 
     // 🧵 Create support thread
     const { threadId } = await supportAgent.createThread(ctx, {
-      userId: args.entityId,
+      userId: `${args.entityId}_${String(args.contactSessionId)}_${Date.now()}`,
     });
 
     // 💬 Initial greet message

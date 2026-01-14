@@ -4,6 +4,17 @@ import { internal } from "./_generated/api";
 import { supportAgent } from "./system/ai/agents/supportAgent";
 import { saveMessage } from "@convex-dev/agent";
 import { components } from "./_generated/api";
+import { getSecretValue, parseSecretString } from "./lib/secrets";
+
+async function readJsonOrText(response: Response): Promise<{ json: unknown | null; text: string }> {
+  const text = await response.text();
+  if (!text) return { json: null, text: "" };
+  try {
+    return { json: JSON.parse(text) as unknown, text };
+  } catch {
+    return { json: null, text };
+  }
+}
 
 type WebhookMessageEvent = {
   event_type: "message";
@@ -106,10 +117,60 @@ function extractCallId(payload: any): string | undefined {
 function extractUserName(payload: any): string | undefined {
   return (
     payload?.call_data?.userName ??
-    payload?.call_data?.user_name ??
-    payload?.user_name ??
-    payload?.userName
+      payload?.call_data?.user_name ??
+      payload?.user_name ??
+      payload?.userName
   );
+}
+
+async function resolveAgentIdByCallId(
+  ctx: any,
+  callId: string,
+): Promise<{ agentId?: string; entityId?: string } | null> {
+  const plugins: any[] = await ctx.runQuery((internal as any).system.plugin.listByService, {
+    service: "beyond_presence",
+  });
+
+  for (const plugin of Array.isArray(plugins) ? plugins : []) {
+    const entityId = typeof plugin?.entityId === "string" ? plugin.entityId : undefined;
+    if (!entityId) continue;
+
+    const secretName = typeof plugin?.secretName === "string" ? plugin.secretName : "";
+    if (!secretName) continue;
+
+    try {
+      const secretValue = await getSecretValue(secretName);
+      const secretData = parseSecretString<{ apiKey: string; baseUrl?: string }>(secretValue);
+
+      const apiKey = typeof secretData?.apiKey === "string" ? secretData.apiKey : "";
+      const baseUrl =
+        typeof secretData?.baseUrl === "string" && secretData.baseUrl.trim()
+          ? secretData.baseUrl.trim()
+          : "https://api.bey.dev";
+      if (!apiKey) continue;
+
+      const resp = await fetch(`${baseUrl}/v1/calls?limit=50`, {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+        },
+      });
+
+      if (!resp.ok) continue;
+      const body = await readJsonOrText(resp);
+      const json = (body.json ?? null) as any;
+      const list: any[] = Array.isArray(json?.data) ? json.data : [];
+      const match = list.find((c: any) => String(c?.id ?? "") === callId);
+      const agentId = normalizeId(match?.agent_id ?? match?.agentId);
+      if (agentId) {
+        return { agentId, entityId };
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  return null;
 }
 
 const router = httpRouter();
@@ -196,15 +257,26 @@ router.route({
         const userName: string | undefined = extractUserName(payload);
 
         if (!agentId) {
-          console.warn("[beyond-presence/webhook] Missing agentId in payload", {
+          console.warn("[beyond-presence/webhook] Missing agentId in payload; attempting to resolve by callId", {
             callId,
             eventType,
             keys: Object.keys(payload ?? {}),
             callKeys: Object.keys(payload?.call ?? {}),
             callDataKeys: Object.keys(payload?.call_data ?? {}),
           });
-          // Can't create a link without an agentId, but we still ACK the webhook.
-          return jsonResponse(200, { ok: true });
+
+          const resolved = await resolveAgentIdByCallId(ctx, callId);
+          if (resolved?.agentId) {
+            agentId = resolved.agentId;
+            console.log("[beyond-presence/webhook] Resolved agentId from calls list", {
+              callId,
+              agentId,
+              entityId: resolved.entityId,
+            });
+          } else {
+            // Can't create a link without an agentId, but we still ACK the webhook.
+            return jsonResponse(200, { ok: true });
+          }
         }
 
         console.log("[beyond-presence/webhook] Creating link", {

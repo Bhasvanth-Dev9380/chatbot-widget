@@ -56,3 +56,21 @@ export const getByEntityIdAndService = internalQuery({
       .unique();
   },
 });
+
+export const listByService = internalQuery({
+  args: {
+    service: v.union(
+      v.literal("vapi"),
+      v.literal("beyond_presence"),
+      v.literal("salesforce"),
+      v.literal("zoho_desk"),
+      v.literal("slack"),
+    ),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("plugins")
+      .filter((q) => q.eq(q.field("service"), args.service))
+      .collect();
+  },
+});

@@ -158,7 +158,6 @@ export const getMany = query({
         .filter((q) =>
           q.eq(q.field("entityId"), args.entityId),
         )
-        .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
         .paginate(pagination);
 
@@ -181,7 +180,6 @@ export const getMany = query({
             )
             .eq("entityId", args.entityId),
         )
-        .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
         .paginate(pagination);
     } else {
@@ -190,7 +188,6 @@ export const getMany = query({
         .withIndex("by_entity_id", (q) =>
           q.eq("entityId", args.entityId),
         )
-        .filter((q) => q.neq(q.field("isTranscriptPending"), true))
         .order("desc")
         .paginate(pagination);
     }

@@ -55,6 +55,67 @@ function pickWebhookishFields(agent: any): Record<string, unknown> {
   return out;
 }
 
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value.trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function unwrapAgentResponse(json: unknown): any {
+  if (!json || typeof json !== "object" || Array.isArray(json)) return json;
+  const record = json as Record<string, unknown>;
+  const data = record.data;
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    return data;
+  }
+  return json;
+}
+
+const BEY_LANGUAGE_CODES = new Set([
+  "ar",
+  "bn",
+  "bg",
+  "zh",
+  "cs",
+  "da",
+  "nl",
+  "en",
+  "en-AU",
+  "en-GB",
+  "en-US",
+  "fi",
+  "fr",
+  "fr-CA",
+  "fr-FR",
+  "de",
+  "el",
+  "hi",
+  "hu",
+  "id",
+  "it",
+  "ja",
+  "kk",
+  "ko",
+  "ms",
+  "no",
+  "pl",
+  "pt",
+  "pt-BR",
+  "pt-PT",
+  "ro",
+  "ru",
+  "sk",
+  "es",
+  "sv",
+  "tr",
+  "uk",
+  "ur",
+  "vi",
+]);
+
 async function getBeyondPresenceCredentials(
   ctx: any,
   entityId: string,
@@ -148,7 +209,13 @@ export const getAgents = action({
       const lang = typeof agent?.language === "string" ? agent.language : "";
       const m = name.match(/\(([^()]+)\)\s*$/);
       const suffix = m?.[1] ? String(m[1]).trim() : "";
-      if (suffix && lang && suffix === lang) return false;
+      if (suffix && BEY_LANGUAGE_CODES.has(suffix)) {
+        // Hide if it's an obvious language clone even if agent.language is missing
+        // (or if BEY returns a normalized language value).
+        if (!lang) return false;
+        if (suffix === lang) return false;
+        if (String(lang).startsWith(`${suffix}-`)) return false;
+      }
 
       return true;
     });
@@ -244,7 +311,7 @@ export const createAgent = action({
       system_prompt: args.systemPrompt,
       language: args.language ?? "en",
       greeting: args.greeting ?? "Hello!",
-      max_session_length_minutes: args.maxSessionLengthMinutes ?? 30,
+      max_session_length_minutes: args.maxSessionLengthMinutes ?? 3,
     };
 
     if (
@@ -273,7 +340,7 @@ export const createAgent = action({
     }
 
     const okBody = await readJsonOrText(response);
-    return okBody.json;
+    return unwrapAgentResponse(okBody.json);
   },
 });
 
@@ -320,7 +387,7 @@ export const updateAgent = action({
       );
       if (existingResp.ok) {
         const existingBody = await readJsonOrText(existingResp);
-        existingAgent = (existingBody.json ?? null) as any;
+        existingAgent = unwrapAgentResponse(existingBody.json ?? null) as any;
       }
     } catch {
       // best-effort
@@ -409,9 +476,9 @@ export const updateAgent = action({
 
         if (baseResp.ok) {
           const baseBody = await readJsonOrText(baseResp);
-          baseAgent = (baseBody.json ?? null) as any;
+          baseAgent = unwrapAgentResponse(baseBody.json ?? null) as any;
         } else {
-          baseAgent = (okBody.json ?? null) as any;
+          baseAgent = unwrapAgentResponse(okBody.json ?? null) as any;
         }
 
         const syncPromises: Promise<unknown>[] = [];
@@ -423,15 +490,13 @@ export const updateAgent = action({
 
             const clonePatch: Record<string, any> = {
               language: lang,
-              name: String(baseAgent?.name ?? "Agent"),
+              name: `${String(baseAgent?.name ?? "Agent")} (${lang})`,
               avatar_id: String(baseAgent?.avatar_id ?? ""),
               system_prompt: String(baseAgent?.system_prompt ?? ""),
               greeting:
                 typeof baseAgent?.greeting === "string" ? baseAgent.greeting : undefined,
               max_session_length_minutes:
-                typeof baseAgent?.max_session_length_minutes === "number"
-                  ? baseAgent.max_session_length_minutes
-                  : undefined,
+                toFiniteNumber(baseAgent?.max_session_length_minutes),
               ...pickWebhookishFields(baseAgent),
             };
 
@@ -468,7 +533,7 @@ export const updateAgent = action({
       // best-effort
     }
 
-    return okBody.json;
+    return unwrapAgentResponse(okBody.json);
   },
 });
 
@@ -496,6 +561,24 @@ export const deleteAgent = action({
 
     // If deleting a base agent, delete all clones first.
     if (!mapping) {
+      let baseAgent: any = null;
+      try {
+        const baseResp = await fetch(`${baseUrl}/v1/agents/${targetBaseAgentId}`,
+          {
+            method: "GET",
+            headers: {
+              "x-api-key": apiKey,
+            },
+          },
+        );
+        if (baseResp.ok) {
+          const baseBody = await readJsonOrText(baseResp);
+          baseAgent = unwrapAgentResponse(baseBody.json ?? null) as any;
+        }
+      } catch {
+        // best-effort
+      }
+
       const clones = await ctx.runQuery(
         (internal as any).system.beyondPresenceLanguageAgents.listByOrgBaseAgentId,
         {
@@ -535,6 +618,62 @@ export const deleteAgent = action({
           baseAgentId: targetBaseAgentId,
         },
       );
+
+      // Best-effort: delete orphan clones even if the mapping rows are missing.
+      // We identify clones by name suffix "(<lang>)" plus matching avatar_id and system_prompt.
+      try {
+        const baseName = typeof baseAgent?.name === "string" ? baseAgent.name : "";
+        const baseAvatarId = typeof baseAgent?.avatar_id === "string" ? baseAgent.avatar_id : "";
+        const basePrompt = typeof baseAgent?.system_prompt === "string" ? baseAgent.system_prompt : "";
+
+        if (baseName && baseAvatarId && basePrompt) {
+          const listResp = await fetch(`${baseUrl}/v1/agents?limit=50`, {
+            method: "GET",
+            headers: {
+              "x-api-key": apiKey,
+            },
+          });
+
+          if (listResp.ok) {
+            const listBody = await readJsonOrText(listResp);
+            const json = (listBody.json ?? null) as { data?: unknown[] } | null;
+            const list: any[] = Array.isArray(json?.data) ? (json?.data as any[]) : [];
+
+            const cloneCandidates = list.filter((agent: any) => {
+              const id = typeof agent?.id === "string" ? agent.id : "";
+              if (!id || id === targetBaseAgentId) return false;
+              const name = typeof agent?.name === "string" ? agent.name : "";
+              const avatarId = typeof agent?.avatar_id === "string" ? agent.avatar_id : "";
+              const prompt = typeof agent?.system_prompt === "string" ? agent.system_prompt : "";
+              if (avatarId !== baseAvatarId) return false;
+              if (prompt !== basePrompt) return false;
+
+              const m = name.match(/\(([^()]+)\)\s*$/);
+              const suffix = m?.[1] ? String(m[1]).trim() : "";
+              if (!suffix || !BEY_LANGUAGE_CODES.has(suffix)) return false;
+
+              const expectedPrefix = `${baseName} (`;
+              return name.startsWith(expectedPrefix);
+            });
+
+            for (const agent of cloneCandidates) {
+              const id = String(agent.id);
+              try {
+                await fetch(`${baseUrl}/v1/agents/${id}`, {
+                  method: "DELETE",
+                  headers: {
+                    "x-api-key": apiKey,
+                  },
+                });
+              } catch {
+                // best-effort
+              }
+            }
+          }
+        }
+      } catch {
+        // best-effort
+      }
     } else {
       await ctx.runMutation(
         (internal as any).system.beyondPresenceLanguageAgents.deleteByAgentId,
@@ -609,12 +748,12 @@ export const getOrCreateLanguageAgent = action({
         if (baseResp.ok && cloneResp.ok) {
           const baseBody = await readJsonOrText(baseResp);
           const cloneBody = await readJsonOrText(cloneResp);
-          const baseAgent = (baseBody.json ?? null) as any;
-          const cloneAgent = (cloneBody.json ?? null) as any;
+          const baseAgent = unwrapAgentResponse(baseBody.json ?? null) as any;
+          const cloneAgent = unwrapAgentResponse(cloneBody.json ?? null) as any;
 
           const patch: Record<string, any> = {
             language: args.language,
-            name: String(baseAgent?.name ?? cloneAgent?.name ?? "Agent"),
+            name: `${String(baseAgent?.name ?? cloneAgent?.name ?? "Agent")} (${args.language})`,
             avatar_id: String(baseAgent?.avatar_id ?? cloneAgent?.avatar_id ?? ""),
             system_prompt: String(
               baseAgent?.system_prompt ?? cloneAgent?.system_prompt ?? "",
@@ -624,9 +763,8 @@ export const getOrCreateLanguageAgent = action({
                 ? baseAgent.greeting
                 : cloneAgent?.greeting,
             max_session_length_minutes:
-              typeof baseAgent?.max_session_length_minutes === "number"
-                ? baseAgent.max_session_length_minutes
-                : cloneAgent?.max_session_length_minutes,
+              toFiniteNumber(baseAgent?.max_session_length_minutes) ??
+              toFiniteNumber(cloneAgent?.max_session_length_minutes),
             ...pickWebhookishFields(baseAgent),
           };
 
@@ -675,18 +813,16 @@ export const getOrCreateLanguageAgent = action({
     }
 
     const getBody = await readJsonOrText(getResp);
-    const baseAgent = (getBody.json ?? null) as any;
+    const baseAgent = unwrapAgentResponse(getBody.json ?? null) as any;
 
     const createBody: Record<string, any> = {
-      name: String(baseAgent?.name ?? "Agent"),
+      name: `${String(baseAgent?.name ?? "Agent")} (${args.language})`,
       avatar_id: String(baseAgent?.avatar_id ?? ""),
       system_prompt: String(baseAgent?.system_prompt ?? ""),
       language: args.language,
       greeting: typeof baseAgent?.greeting === "string" ? baseAgent.greeting : undefined,
       max_session_length_minutes:
-        typeof baseAgent?.max_session_length_minutes === "number"
-          ? baseAgent.max_session_length_minutes
-          : 30,
+        toFiniteNumber(baseAgent?.max_session_length_minutes) ?? 3,
       ...pickWebhookishFields(baseAgent),
     };
 
