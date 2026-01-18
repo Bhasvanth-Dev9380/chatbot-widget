@@ -14,6 +14,7 @@ export const insertConversationInternal = internalMutation({
     threadId: v.string(),
     caseId: v.string(),
     zohoDeskTicketId: v.optional(v.string()),
+    hubspotTicketId: v.optional(v.string()),
     chatbotId: v.optional(v.id("chatbots")),
     kind: v.optional(
       v.union(v.literal("chat"), v.literal("voice"), v.literal("video")),
@@ -28,6 +29,7 @@ export const insertConversationInternal = internalMutation({
       threadId: args.threadId,
       caseId: args.caseId,
       zohoDeskTicketId: args.zohoDeskTicketId,
+      hubspotTicketId: args.hubspotTicketId,
       chatbotId: args.chatbotId,
       kind: args.kind,
       isTranscriptPending: args.isTranscriptPending,
@@ -309,6 +311,28 @@ export const create: any = action({
       zohoDeskTicketId = null;
     }
 
+    let hubspotTicketId: string | null = null;
+    try {
+      const hsStatus = await ctx.runAction((api as any).private.hubspot.getConnectionStatus, {
+        entityId: args.entityId,
+      });
+      const hsConnected = Boolean(hsStatus?.connected);
+      if (hsConnected) {
+        const hs = await ctx.runAction((api as any).private.hubspot.createTicket, {
+          entityId: args.entityId,
+          subject,
+          description: caseDescription,
+          contactName: session.name,
+          contactEmail: session.email,
+        });
+        const id = typeof hs?.id === "string" ? hs.id : null;
+        hubspotTicketId = id && id.trim() ? id : null;
+      }
+    } catch (error) {
+      console.error("[conversations.create] HubSpot ticket creation failed", error);
+      hubspotTicketId = null;
+    }
+
     console.log("[conversations.create] Creating Salesforce case", {
       entityId: args.entityId,
       subject,
@@ -396,6 +420,21 @@ export const create: any = action({
       }
     }
 
+    if (hubspotTicketId) {
+      try {
+        await ctx.runAction((api as any).private.hubspot.addInternalTicketComment, {
+          entityId: args.entityId,
+          ticketId: hubspotTicketId,
+          commentBody: `Assistant: ${String(greetMessage ?? "")}`.trim(),
+        });
+      } catch (error) {
+        console.error(
+          "[conversations.create] Failed to post HubSpot ticket comment (greet)",
+          error,
+        );
+      }
+    }
+
     const conversationId: any = await ctx.runMutation(
       (internal as any).public.conversations.insertConversationInternal,
       {
@@ -404,6 +443,7 @@ export const create: any = action({
         threadId,
         caseId,
         zohoDeskTicketId: zohoDeskTicketId ?? undefined,
+        hubspotTicketId: hubspotTicketId ?? undefined,
         chatbotId: chatbot?._id ?? undefined,
         kind: args.kind,
         isTranscriptPending: args.isTranscriptPending,

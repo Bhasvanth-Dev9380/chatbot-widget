@@ -62,6 +62,18 @@ export const escalate = internalAction({
       }
     }
 
+    if (conversation.hubspotTicketId) {
+      try {
+        await ctx.runAction((api as any).private.hubspot.updateTicketStatus, {
+          entityId: conversation.entityId,
+          ticketId: conversation.hubspotTicketId,
+          status: "Escalated",
+        });
+      } catch (error) {
+        console.error("[conversations.escalate] Failed to escalate HubSpot ticket", error);
+      }
+    }
+
     await ctx.runMutation(internal.system.conversations.setEscalated, {
       threadId: args.threadId,
     });
@@ -137,6 +149,18 @@ export const resolve = internalAction({
         });
       } catch (error) {
         console.error("[conversations.resolve] Failed to resolve Zoho Desk ticket", error);
+      }
+    }
+
+    if (conversation.hubspotTicketId) {
+      try {
+        await ctx.runAction((api as any).private.hubspot.updateTicketStatus, {
+          entityId: conversation.entityId,
+          ticketId: conversation.hubspotTicketId,
+          status: "Closed",
+        });
+      } catch (error) {
+        console.error("[conversations.resolve] Failed to resolve HubSpot ticket", error);
       }
     }
 

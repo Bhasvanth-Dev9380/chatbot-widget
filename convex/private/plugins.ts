@@ -9,6 +9,8 @@ export const remove = mutation({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     // ✅ orgId now comes from the client (BetterAuth → Convex user)
     entityId: v.string(),
@@ -42,6 +44,8 @@ export const getOne = query({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     // ✅ orgId from client
     entityId: v.string(),

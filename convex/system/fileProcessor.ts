@@ -804,41 +804,66 @@ function chunkText(
   chunkSize: number = 2000,
   overlapSize: number = 400
 ): string[] {
-  if (text.length <= chunkSize) {
-    return [text];
-  }
+  const cleaned = String(text ?? "").replace(/\r\n/g, "\n");
+  if (cleaned.length <= chunkSize) return [cleaned.trim()];
+
+  const lines = cleaned.split("\n");
+  const isHeading = (line: string) => {
+    const s = String(line ?? "").trim();
+    if (!s) return false;
+    if (s.startsWith("#")) return true;
+    if (s.length <= 80 && (s.endsWith(":") || /^[A-Z0-9\s\-()&/]+$/.test(s))) return true;
+    return false;
+  };
 
   const chunks: string[] = [];
-  let startIndex = 0;
+  let currentHeading = "";
+  let buffer: string[] = [];
 
-  while (startIndex < text.length) {
-    let endIndex = startIndex + chunkSize;
+  const flush = () => {
+    const body = buffer.join("\n").trim();
+    buffer = [];
+    if (!body) return;
+    const withHeading = currentHeading && !body.startsWith(currentHeading) ? `${currentHeading}\n${body}` : body;
+    chunks.push(withHeading);
+  };
 
-    if (endIndex < text.length) {
-      const chunkText = text.slice(startIndex, endIndex);
-      const lastPeriod = chunkText.lastIndexOf(". ");
-      const lastNewline = chunkText.lastIndexOf("\n");
-      const lastBreak = Math.max(lastPeriod, lastNewline);
+  for (const rawLine of lines) {
+    const line = String(rawLine ?? "");
+    const trimmed = line.trim();
 
-      if (lastBreak > chunkSize * 0.7) {
-        endIndex = startIndex + lastBreak + (lastPeriod > lastNewline ? 2 : 1);
-      }
-    } else {
-      endIndex = text.length;
+    if (isHeading(trimmed)) {
+      flush();
+      currentHeading = trimmed;
+      continue;
     }
 
-    const chunk = text.slice(startIndex, endIndex).trim();
-    if (chunk.length > 0) {
-      chunks.push(chunk);
+    if (!trimmed) {
+      if (buffer.length > 0 && buffer[buffer.length - 1] !== "") buffer.push("");
+      continue;
     }
 
-    if (endIndex >= text.length) {
-      break;
-    }
+    buffer.push(trimmed);
 
-    const nextStart = endIndex - overlapSize;
-    startIndex = Math.max(nextStart, startIndex + 1);
+    const approxLen = buffer.join("\n").length + (currentHeading ? currentHeading.length + 1 : 0);
+    if (approxLen >= chunkSize) {
+      flush();
+    }
   }
+  flush();
 
-  return chunks.length > 0 ? chunks : [text];
+  if (chunks.length === 0) return [cleaned.trim()];
+
+  if (overlapSize <= 0) return chunks;
+  const overlapped: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    if (i === 0) {
+      overlapped.push(chunks[i]);
+      continue;
+    }
+    const prev = chunks[i - 1];
+    const tail = prev.length > overlapSize ? prev.slice(prev.length - overlapSize) : prev;
+    overlapped.push(`${tail}\n${chunks[i]}`.trim());
+  }
+  return overlapped;
 }

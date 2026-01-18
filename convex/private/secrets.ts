@@ -10,6 +10,8 @@ export const upsert = action({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     value: v.any(),
     // ✅ orgId from client

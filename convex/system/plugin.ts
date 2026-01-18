@@ -9,6 +9,8 @@ export const upsert = internalMutation({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     secretName: v.string(),
     entityId: v.string(),
@@ -45,6 +47,8 @@ export const getByEntityIdAndService = internalQuery({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
   },
   handler: async (ctx, args) => {
@@ -65,6 +69,8 @@ export const listByService = internalQuery({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
   },
   handler: async (ctx, args) => {

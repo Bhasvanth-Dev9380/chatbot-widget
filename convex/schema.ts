@@ -120,6 +120,8 @@ export default defineSchema({
       v.literal("salesforce"),
       v.literal("zoho_desk"),
       v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     secretName: v.string(),
   })
@@ -134,6 +136,7 @@ export default defineSchema({
     chatbotId: v.optional(v.id("chatbots")),
     caseId: v.optional(v.string()),
     zohoDeskTicketId: v.optional(v.string()),
+    hubspotTicketId: v.optional(v.string()),
     status: v.union(
       v.literal("unresolved"),
       v.literal("escalated"),
@@ -151,6 +154,7 @@ export default defineSchema({
     .index("by_status_and_entity_id", ["status", "entityId"])
     .index("by_case_id", ["caseId"])
     .index("by_zoho_desk_ticket_id", ["zohoDeskTicketId"])
+    .index("by_hubspot_ticket_id", ["hubspotTicketId"])
     .index("by_chatbot_id", ["chatbotId"]),
 
   /* ───────── CONTACT SESSIONS ───────── */

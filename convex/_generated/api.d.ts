@@ -22,10 +22,12 @@ import type * as migrations_fixKnowledgeBases from "../migrations/fixKnowledgeBa
 import type * as private_analytics from "../private/analytics.js";
 import type * as private_beyondPresence from "../private/beyondPresence.js";
 import type * as private_chatbots from "../private/chatbots.js";
+import type * as private_clover from "../private/clover.js";
 import type * as private_contactSessions from "../private/contactSessions.js";
 import type * as private_conversations from "../private/conversations.js";
 import type * as private_convexUsageEstimated from "../private/convexUsageEstimated.js";
 import type * as private_files from "../private/files.js";
+import type * as private_hubspot from "../private/hubspot.js";
 import type * as private_knowledgeBases from "../private/knowledgeBases.js";
 import type * as private_messages from "../private/messages.js";
 import type * as private_notifications from "../private/notifications.js";
@@ -43,6 +45,7 @@ import type * as public_beyondPresence from "../public/beyondPresence.js";
 import type * as public_chatbots from "../public/chatbots.js";
 import type * as public_contactSessions from "../public/contactSessions.js";
 import type * as public_conversations from "../public/conversations.js";
+import type * as public_entities from "../public/entities.js";
 import type * as public_messages from "../public/messages.js";
 import type * as public_organizations from "../public/organizations.js";
 import type * as public_secrets from "../public/secrets.js";
@@ -51,6 +54,7 @@ import type * as public_widgetSettings from "../public/widgetSettings.js";
 import type * as system_ai_agents_supportAgent from "../system/ai/agents/supportAgent.js";
 import type * as system_ai_constants from "../system/ai/constants.js";
 import type * as system_ai_rag from "../system/ai/rag.js";
+import type * as system_ai_tools_cloverOrders from "../system/ai/tools/cloverOrders.js";
 import type * as system_ai_tools_escalateConversation from "../system/ai/tools/escalateConversation.js";
 import type * as system_ai_tools_resolveConversation from "../system/ai/tools/resolveConversation.js";
 import type * as system_ai_tools_search from "../system/ai/tools/search.js";
@@ -90,10 +94,12 @@ declare const fullApi: ApiFromModules<{
   "private/analytics": typeof private_analytics;
   "private/beyondPresence": typeof private_beyondPresence;
   "private/chatbots": typeof private_chatbots;
+  "private/clover": typeof private_clover;
   "private/contactSessions": typeof private_contactSessions;
   "private/conversations": typeof private_conversations;
   "private/convexUsageEstimated": typeof private_convexUsageEstimated;
   "private/files": typeof private_files;
+  "private/hubspot": typeof private_hubspot;
   "private/knowledgeBases": typeof private_knowledgeBases;
   "private/messages": typeof private_messages;
   "private/notifications": typeof private_notifications;
@@ -111,6 +117,7 @@ declare const fullApi: ApiFromModules<{
   "public/chatbots": typeof public_chatbots;
   "public/contactSessions": typeof public_contactSessions;
   "public/conversations": typeof public_conversations;
+  "public/entities": typeof public_entities;
   "public/messages": typeof public_messages;
   "public/organizations": typeof public_organizations;
   "public/secrets": typeof public_secrets;
@@ -119,6 +126,7 @@ declare const fullApi: ApiFromModules<{
   "system/ai/agents/supportAgent": typeof system_ai_agents_supportAgent;
   "system/ai/constants": typeof system_ai_constants;
   "system/ai/rag": typeof system_ai_rag;
+  "system/ai/tools/cloverOrders": typeof system_ai_tools_cloverOrders;
   "system/ai/tools/escalateConversation": typeof system_ai_tools_escalateConversation;
   "system/ai/tools/resolveConversation": typeof system_ai_tools_resolveConversation;
   "system/ai/tools/search": typeof system_ai_tools_search;
@@ -3409,6 +3417,462 @@ export declare const components: {
             startOrder: number;
           }>;
         }
+      >;
+    };
+  };
+  entities: {
+    employee: {
+      add: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          displayName?: string;
+          email: string;
+          employeeId?: string;
+          entityId: string;
+          firstName: string;
+          lastName: string;
+          profileImageUrl?: string;
+          roles?: Array<string>;
+          status?: "ACTIVE" | "INVITED" | "SUSPENDED";
+        },
+        any
+      >;
+      findEntitiesByEmail: FunctionReference<
+        "query",
+        "internal",
+        { email: string },
+        any
+      >;
+      get: FunctionReference<
+        "query",
+        "internal",
+        { employeeId: string; entityId: string },
+        any
+      >;
+      getEntityIdByEmail: FunctionReference<
+        "query",
+        "internal",
+        { email: string },
+        any
+      >;
+      getUserIdByEmail: FunctionReference<
+        "query",
+        "internal",
+        { email: string },
+        any
+      >;
+      list: FunctionReference<"query", "internal", { entityId: string }, any>;
+      remove: FunctionReference<
+        "mutation",
+        "internal",
+        { employeeId: string; entityId: string },
+        any
+      >;
+      update: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          displayName?: string;
+          email?: string;
+          employeeId: string;
+          entityId: string;
+          firstName?: string;
+          lastName?: string;
+          profileImageUrl?: string;
+          roles?: Array<string>;
+          status?: "ACTIVE" | "INVITED" | "SUSPENDED";
+        },
+        any
+      >;
+    };
+    entity: {
+      create: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          address?: {
+            city?: string;
+            country?: string;
+            line1?: string;
+            line2?: string;
+            state?: string;
+            zip?: string;
+          };
+          autoRechargeEnabled?: boolean;
+          businessRegistrationNumber?: string;
+          email?: string;
+          firstName?: string;
+          lastName?: string;
+          name: string;
+          phoneNumber?: string;
+          tags?: Array<string>;
+          userId?: string;
+          websiteUrl?: string;
+        },
+        any
+      >;
+      get: FunctionReference<"query", "internal", { entityId: string }, any>;
+      getDetails: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      list: FunctionReference<"query", "internal", {}, any>;
+      remove: FunctionReference<
+        "mutation",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      update: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          activePlans?: any;
+          address?: {
+            city?: string;
+            country?: string;
+            line1?: string;
+            line2?: string;
+            state?: string;
+            zip?: string;
+          };
+          autoRechargeEnabled?: boolean;
+          businessRegistrationNumber?: string;
+          email?: string;
+          entitlements?: any;
+          entityId: string;
+          isActive?: boolean;
+          name?: string;
+          phoneNumber?: string;
+          tags?: Array<string>;
+          websiteUrl?: string;
+        },
+        any
+      >;
+    };
+    product: {
+      assignProduct: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          allocated?: number;
+          employeeId: string;
+          entityId: string;
+          isEnabled?: boolean;
+          productId: string;
+        },
+        any
+      >;
+      assignProductByEmail: FunctionReference<
+        "mutation",
+        "internal",
+        { allocated?: number; email: string; productId: string },
+        any
+      >;
+      assignProductsToEmployee: FunctionReference<
+        "mutation",
+        "internal",
+        { employeeId: string; entityId: string; products: any },
+        any
+      >;
+      assignProductToEmployee: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          allocated?: number;
+          customFields?: any;
+          employeeId: string;
+          enabled?: boolean;
+          entityId: string;
+          productId: string;
+        },
+        any
+      >;
+      assignStandaloneProduct: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          employeeId: string;
+          entityId: string;
+          isEnabled?: boolean;
+          metadata?: any;
+          productId: string;
+        },
+        any
+      >;
+      assignStandaloneProductByEmail: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          email: string;
+          isEnabled?: boolean;
+          metadata?: any;
+          productId: string;
+        },
+        any
+      >;
+      deleteProductByEmail: FunctionReference<
+        "mutation",
+        "internal",
+        { email: string; productId: string },
+        any
+      >;
+      getCurrentCounter: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      getEmployeeProduct: FunctionReference<
+        "query",
+        "internal",
+        { employeeId: string; entityId: string; productId: string },
+        any
+      >;
+      getPlan: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string; planId: string; productId: string },
+        any
+      >;
+      getProduct: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string; productId: string },
+        any
+      >;
+      getProductByEmail: FunctionReference<
+        "query",
+        "internal",
+        { email: string; productId: string },
+        any
+      >;
+      incrementCounter: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          employeeId?: string;
+          entityId: string;
+          idempotencyKey?: string;
+          productId: string;
+          units: number;
+        },
+        any
+      >;
+      isProductActive: FunctionReference<
+        "query",
+        "internal",
+        { employeeId: string; entityId: string; productId: string },
+        any
+      >;
+      listEmployeeProducts: FunctionReference<
+        "query",
+        "internal",
+        {
+          assignedOnly?: boolean;
+          employeeId: string;
+          entityId: string;
+          productType?: "token" | "feature" | "all";
+        },
+        any
+      >;
+      listPlans: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string; productId: string },
+        any
+      >;
+      listProducts: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      listProductsByEmail: FunctionReference<
+        "query",
+        "internal",
+        { email: string },
+        any
+      >;
+      readSubscriptionStatus: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      readTokenStatus: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      removeProductFromEmployee: FunctionReference<
+        "mutation",
+        "internal",
+        { employeeId: string; entityId: string; productId: string },
+        any
+      >;
+      setProductEnabled: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          employeeId: string;
+          entityId: string;
+          isEnabled: boolean;
+          productId: string;
+        },
+        any
+      >;
+      upsertPlan: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          billingCycle?: "monthly" | "annual";
+          currency?: string;
+          entitlements?: any;
+          entityId: string;
+          features?: Array<string>;
+          isActive?: boolean;
+          limits?: any;
+          name: string;
+          overage?: any;
+          planId: string;
+          price: number;
+          productId: string;
+          trialDays?: number;
+        },
+        any
+      >;
+      upsertProduct: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          defaultPlanId?: string;
+          entityId: string;
+          overrides?: any;
+          productId: string;
+          status?: "active" | "paused";
+        },
+        any
+      >;
+    };
+    settings: {
+      create: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          businessType?: string;
+          customerServiceEmail?: string;
+          customerServicePhoneNumber?: string;
+          entityBackground?: string;
+          entityId: string;
+          extraInformation?: string;
+          isActive?: boolean;
+          laborAndWarranty?: string;
+          logo?: string;
+          pricing?: string;
+          productsAndServices?: string;
+          promptUrl?: string;
+          serviceArea?: string;
+          websiteUrl?: string;
+        },
+        any
+      >;
+      get: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string; settingsId: string },
+        any
+      >;
+      list: FunctionReference<"query", "internal", { entityId: string }, any>;
+      remove: FunctionReference<
+        "mutation",
+        "internal",
+        { entityId: string; settingsId: string },
+        any
+      >;
+      update: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          businessType?: string;
+          customerServiceEmail?: string;
+          customerServicePhoneNumber?: string;
+          entityBackground?: string;
+          entityId: string;
+          extraInformation?: string;
+          isActive?: boolean;
+          laborAndWarranty?: string;
+          logo?: string;
+          pricing?: string;
+          productsAndServices?: string;
+          promptUrl?: string;
+          serviceArea?: string;
+          settingsId: string;
+          websiteUrl?: string;
+        },
+        any
+      >;
+    };
+    slmWaitlist: {
+      checkWaitlistStatus: FunctionReference<
+        "query",
+        "internal",
+        { entityId: string },
+        any
+      >;
+      getAllWaitlistEntries: FunctionReference<"query", "internal", {}, any>;
+      joinWaitlist: FunctionReference<
+        "mutation",
+        "internal",
+        { email: string; entityId: string; entityName?: string },
+        any
+      >;
+      updateWaitlistStatus: FunctionReference<
+        "mutation",
+        "internal",
+        { status: "pending" | "approved" | "rejected"; waitlistId: string },
+        any
+      >;
+    };
+    tokens: {
+      getUserTokens: FunctionReference<
+        "query",
+        "internal",
+        { employeeId: string; entityId: string; productId?: string },
+        any
+      >;
+      incrementUserTokens: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          employeeId: string;
+          entityId: string;
+          productId: string;
+          units?: number;
+        },
+        any
+      >;
+      resetUserTokens: FunctionReference<
+        "mutation",
+        "internal",
+        { employeeId: string; entityId: string; productId?: string },
+        any
+      >;
+      setUserTokens: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          allocated?: number;
+          employeeId: string;
+          entityId: string;
+          productId?: string;
+          products?: any;
+        },
+        any
       >;
     };
   };
