@@ -7,7 +7,7 @@ import { query } from "../_generated/server";
 export const getByConversation = query({
   args: {
     conversationId: v.id("conversations"),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     // Get the conversation to find the contactSessionId
@@ -17,10 +17,10 @@ export const getByConversation = query({
     }
 
     // Validate organization access
-    if (conversation.organizationId !== args.organizationId) {
+    if (conversation.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -57,13 +57,13 @@ export const getByConversation = query({
 ------------------------------------------------- */
 export const getByOrganization = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("voiceTranscripts")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId)
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId)
       )
       .order("desc")
       .collect();

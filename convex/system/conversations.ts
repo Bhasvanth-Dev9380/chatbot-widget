@@ -42,11 +42,35 @@ export const escalate = internalAction({
     if (conversation.caseId) {
       try {
         await ctx.runAction(api.private.salesforce.escalateCaseByNumber, {
-          organizationId: conversation.organizationId,
+          entityId: conversation.entityId,
           caseNumber: conversation.caseId,
         });
       } catch (error) {
         console.error("[conversations.escalate] Failed to escalate Salesforce case", error);
+      }
+    }
+
+    if (conversation.zohoDeskTicketId) {
+      try {
+        await ctx.runAction((api as any).private.zohoDesk.updateTicketStatus, {
+          entityId: conversation.entityId,
+          ticketId: conversation.zohoDeskTicketId,
+          status: "Escalated",
+        });
+      } catch (error) {
+        console.error("[conversations.escalate] Failed to escalate Zoho Desk ticket", error);
+      }
+    }
+
+    if (conversation.hubspotTicketId) {
+      try {
+        await ctx.runAction((api as any).private.hubspot.updateTicketStatus, {
+          entityId: conversation.entityId,
+          ticketId: conversation.hubspotTicketId,
+          status: "Escalated",
+        });
+      } catch (error) {
+        console.error("[conversations.escalate] Failed to escalate HubSpot ticket", error);
       }
     }
 
@@ -56,7 +80,7 @@ export const escalate = internalAction({
 
     try {
       await ctx.runAction(api.private.salesforce.sendWebhookEvent, {
-        organizationId: conversation.organizationId,
+        entityId: conversation.entityId,
         event: "case.escalated",
         conversationId: String(conversation._id),
         threadId: conversation.threadId,
@@ -108,11 +132,35 @@ export const resolve = internalAction({
     if (conversation.caseId) {
       try {
         await ctx.runAction(api.private.salesforce.closeCaseByNumber, {
-          organizationId: conversation.organizationId,
+          entityId: conversation.entityId,
           caseNumber: conversation.caseId,
         });
       } catch (error) {
         console.error("[conversations.resolve] Failed to close Salesforce case", error);
+      }
+    }
+
+    if (conversation.zohoDeskTicketId) {
+      try {
+        await ctx.runAction((api as any).private.zohoDesk.updateTicketStatus, {
+          entityId: conversation.entityId,
+          ticketId: conversation.zohoDeskTicketId,
+          status: "Closed",
+        });
+      } catch (error) {
+        console.error("[conversations.resolve] Failed to resolve Zoho Desk ticket", error);
+      }
+    }
+
+    if (conversation.hubspotTicketId) {
+      try {
+        await ctx.runAction((api as any).private.hubspot.updateTicketStatus, {
+          entityId: conversation.entityId,
+          ticketId: conversation.hubspotTicketId,
+          status: "Closed",
+        });
+      } catch (error) {
+        console.error("[conversations.resolve] Failed to resolve HubSpot ticket", error);
       }
     }
 
@@ -122,7 +170,7 @@ export const resolve = internalAction({
 
     try {
       await ctx.runAction(api.private.salesforce.sendWebhookEvent, {
-        organizationId: conversation.organizationId,
+        entityId: conversation.entityId,
         event: "case.resolved",
         conversationId: String(conversation._id),
         threadId: conversation.threadId,

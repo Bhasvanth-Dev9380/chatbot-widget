@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "../_generated/api";
 import { mutation, query } from "../_generated/server";
 import { paginationOptsValidator } from "convex/server";
 
@@ -17,7 +18,7 @@ function generateChatbotId(): string {
 ------------------------------------------------- */
 export const create = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
     knowledgeBaseId: v.optional(v.id("knowledgeBases")),
@@ -39,8 +40,8 @@ export const create = mutation({
     if (args.isDefault) {
       const existingDefaults = await ctx.db
         .query("chatbots")
-        .withIndex("by_organization_id", (q) =>
-          q.eq("organizationId", args.organizationId)
+        .withIndex("by_entity_id", (q) =>
+          q.eq("entityId", args.entityId)
         )
         .filter((q) => q.eq(q.field("isDefault"), true))
         .collect();
@@ -54,7 +55,7 @@ export const create = mutation({
     const chatbotId = generateChatbotId();
 
     const docId = await ctx.db.insert("chatbots", {
-      organizationId: args.organizationId,
+      entityId: args.entityId,
       name: args.name,
       description: args.description,
       knowledgeBaseId: args.knowledgeBaseId,
@@ -84,7 +85,7 @@ export const create = mutation({
 export const update = mutation({
   args: {
     chatbotId: v.id("chatbots"),
-    organizationId: v.string(),
+    entityId: v.string(),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     knowledgeBaseId: v.optional(v.id("knowledgeBases")),
@@ -137,10 +138,10 @@ export const update = mutation({
       });
     }
 
-    if (chatbot.organizationId !== args.organizationId) {
+    if (chatbot.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -148,8 +149,8 @@ export const update = mutation({
     if (args.isDefault && !chatbot.isDefault) {
       const existingDefaults = await ctx.db
         .query("chatbots")
-        .withIndex("by_organization_id", (q) =>
-          q.eq("organizationId", args.organizationId)
+        .withIndex("by_entity_id", (q) =>
+          q.eq("entityId", args.entityId)
         )
         .filter((q) => q.eq(q.field("isDefault"), true))
         .collect();
@@ -191,8 +192,22 @@ export const update = mutation({
       updates.customSystemPrompt = args.customSystemPrompt;
     if (args.aiAvatarEnabled !== undefined)
       updates.aiAvatarEnabled = args.aiAvatarEnabled;
-    if (args.beyondPresenceAgentId !== undefined)
-      updates.beyondPresenceAgentId = args.beyondPresenceAgentId;
+    if (args.beyondPresenceAgentId !== undefined) {
+      const raw = String(args.beyondPresenceAgentId ?? "").trim();
+      if (!raw) {
+        updates.beyondPresenceAgentId = raw;
+      } else {
+        const mapping = await ctx.runQuery(
+          (internal as any).system.beyondPresenceLanguageAgents.getByAgentId,
+          {
+            agentId: raw,
+          },
+        );
+        updates.beyondPresenceAgentId = mapping?.baseAgentId
+          ? String(mapping.baseAgentId)
+          : raw;
+      }
+    }
     if (args.vapiSettings !== undefined)
       updates.vapiSettings = args.vapiSettings;
 
@@ -206,7 +221,7 @@ export const update = mutation({
 export const remove = mutation({
   args: {
     chatbotId: v.id("chatbots"),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const chatbot = await ctx.db.get(args.chatbotId);
@@ -218,10 +233,10 @@ export const remove = mutation({
       });
     }
 
-    if (chatbot.organizationId !== args.organizationId) {
+    if (chatbot.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -229,8 +244,8 @@ export const remove = mutation({
     if (chatbot.isDefault) {
       const all = await ctx.db
         .query("chatbots")
-        .withIndex("by_organization_id", (q) =>
-          q.eq("organizationId", args.organizationId)
+        .withIndex("by_entity_id", (q) =>
+          q.eq("entityId", args.entityId)
         )
         .collect();
 
@@ -251,14 +266,14 @@ export const remove = mutation({
 ------------------------------------------------- */
 export const getMany = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
     return ctx.db
       .query("chatbots")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", args.organizationId)
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", args.entityId)
       )
       .order("desc")
       .paginate(args.paginationOpts);
@@ -271,17 +286,17 @@ export const getMany = query({
 export const getOne = query({
   args: {
     chatbotId: v.id("chatbots"),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const chatbot = await ctx.db.get(args.chatbotId);
 
     if (!chatbot) return null;
 
-    if (chatbot.organizationId !== args.organizationId) {
+    if (chatbot.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -294,13 +309,13 @@ export const getOne = query({
 ------------------------------------------------- */
 export const getActive = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     return ctx.db
       .query("chatbots")
-      .withIndex("by_organization_and_active", (q) =>
-        q.eq("organizationId", args.organizationId).eq("isActive", true)
+      .withIndex("by_entity_and_active", (q) =>
+        q.eq("entityId", args.entityId).eq("isActive", true)
       )
       .collect();
   },
@@ -336,7 +351,7 @@ export const generateLogoUploadUrl = mutation(async (ctx) => {
 export const uploadLogo = mutation({
   args: {
     chatbotId: v.id("chatbots"),
-    organizationId: v.string(),
+    entityId: v.string(),
     storageId: v.id("_storage"),
     fileName: v.string(),
     mimeType: v.string(),
@@ -369,10 +384,10 @@ export const uploadLogo = mutation({
       });
     }
 
-    if (chatbot.organizationId !== args.organizationId) {
+    if (chatbot.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -412,7 +427,7 @@ export const uploadLogo = mutation({
 export const setLogoUrl = mutation({
   args: {
     chatbotId: v.id("chatbots"),
-    organizationId: v.string(),
+    entityId: v.string(),
     externalUrl: v.string(),
   },
   handler: async (ctx, args) => {
@@ -425,10 +440,10 @@ export const setLogoUrl = mutation({
       });
     }
 
-    if (chatbot.organizationId !== args.organizationId) {
+    if (chatbot.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 
@@ -465,7 +480,7 @@ export const setLogoUrl = mutation({
 export const resetLogo = mutation({
   args: {
     chatbotId: v.id("chatbots"),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const chatbot = await ctx.db.get(args.chatbotId);
@@ -477,10 +492,10 @@ export const resetLogo = mutation({
       });
     }
 
-    if (chatbot.organizationId !== args.organizationId) {
+    if (chatbot.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 

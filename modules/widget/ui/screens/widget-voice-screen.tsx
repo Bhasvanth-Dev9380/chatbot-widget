@@ -13,7 +13,7 @@ import { useVapi } from "@/modules/widget/hooks/use-vapi";
 import { WidgetHeader } from "@/modules/widget/ui/components/widget-header";
 import { useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { chatbotIdAtom, conversationIdAtom, screenAtom, organizationIdAtom, contactSessionIdAtomFamily } from "../../atoms/widget-atoms";
+import { chatbotIdAtom, conversationIdAtom, screenAtom, entityIdAtom, contactSessionIdAtomFamily } from "../../atoms/widget-atoms";
 import { useAction, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { cn } from "@/lib/utils";
@@ -32,10 +32,10 @@ export const WidgetVoiceScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
   const conversationId = useAtomValue(conversationIdAtom);
-  const organizationId = useAtomValue(organizationIdAtom);
+  const entityId = useAtomValue(entityIdAtom);
   const chatbotId = useAtomValue(chatbotIdAtom);
   const contactSessionId = useAtomValue(
-    contactSessionIdAtomFamily(organizationId || "")
+    contactSessionIdAtomFamily(entityId || "")
   );
 
   const createConversation = useAction((api as any).public.conversations.create);
@@ -135,7 +135,7 @@ export const WidgetVoiceScreen = () => {
                 disabled={isConnecting}
                 size="lg"
                 onClick={async () => {
-                  if (!organizationId || !contactSessionId) {
+                  if (!entityId || !contactSessionId) {
                     setScreen("auth");
                     return;
                   }
@@ -143,7 +143,7 @@ export const WidgetVoiceScreen = () => {
                   if (!conversationId) {
                     const newConversationId = await (createConversation as any)({
                       contactSessionId,
-                      organizationId,
+                      entityId,
                       chatbotId: chatbotId || undefined,
                       kind: "voice",
                       isTranscriptPending: true,

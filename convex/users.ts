@@ -14,14 +14,14 @@ export const add = mutation({
     name: v.string(),
     email: v.string(),
     authId: v.string(),
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("users", {
       name: args.name,
       email: args.email,
       authId: args.authId,
-      organizationId: args.organizationId,
+      entityId: args.entityId,
     });
   },
 });

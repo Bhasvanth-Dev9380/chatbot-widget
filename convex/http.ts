@@ -4,6 +4,17 @@ import { internal } from "./_generated/api";
 import { supportAgent } from "./system/ai/agents/supportAgent";
 import { saveMessage } from "@convex-dev/agent";
 import { components } from "./_generated/api";
+import { getSecretValue, parseSecretString } from "./lib/secrets";
+
+async function readJsonOrText(response: Response): Promise<{ json: unknown | null; text: string }> {
+  const text = await response.text();
+  if (!text) return { json: null, text: "" };
+  try {
+    return { json: JSON.parse(text) as unknown, text };
+  } catch {
+    return { json: null, text };
+  }
+}
 
 type WebhookMessageEvent = {
   event_type: "message";
@@ -67,26 +78,99 @@ function toRole(sender: unknown): "user" | "assistant" {
   return "user";
 }
 
+function normalizeId(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const s = typeof value === "string" ? value : String(value);
+  const trimmed = s.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function extractAgentId(payload: any): string | undefined {
-  return (
+  return normalizeId(
     payload?.call_data?.agentId ??
-    payload?.call_data?.agent_id ??
-    payload?.call_data?.agent ??
-    payload?.agentId ??
-    payload?.agent_id ??
-    payload?.call?.agentId ??
-    payload?.call?.agent_id ??
-    payload?.call?.agent?.id
+      payload?.call_data?.agent_id ??
+      payload?.call_data?.agent?.id ??
+      payload?.call_data?.agent?.agentId ??
+      payload?.call_data?.agent?.agent_id ??
+      payload?.call_data?.agent ??
+      payload?.agentId ??
+      payload?.agent_id ??
+      payload?.agent?.id ??
+      payload?.call?.agentId ??
+      payload?.call?.agent_id ??
+      payload?.call?.agent?.id ??
+      payload?.call?.agent?.agent_id,
+  );
+}
+
+function extractCallId(payload: any): string | undefined {
+  return normalizeId(
+    payload?.call_id ??
+      payload?.callId ??
+      payload?.call?.id ??
+      payload?.call?.call_id ??
+      payload?.call_data?.call_id ??
+      payload?.call_data?.callId,
   );
 }
 
 function extractUserName(payload: any): string | undefined {
   return (
     payload?.call_data?.userName ??
-    payload?.call_data?.user_name ??
-    payload?.user_name ??
-    payload?.userName
+      payload?.call_data?.user_name ??
+      payload?.user_name ??
+      payload?.userName
   );
+}
+
+async function resolveAgentIdByCallId(
+  ctx: any,
+  callId: string,
+): Promise<{ agentId?: string; entityId?: string } | null> {
+  const plugins: any[] = await ctx.runQuery((internal as any).system.plugin.listByService, {
+    service: "beyond_presence",
+  });
+
+  for (const plugin of Array.isArray(plugins) ? plugins : []) {
+    const entityId = typeof plugin?.entityId === "string" ? plugin.entityId : undefined;
+    if (!entityId) continue;
+
+    const secretName = typeof plugin?.secretName === "string" ? plugin.secretName : "";
+    if (!secretName) continue;
+
+    try {
+      const secretValue = await getSecretValue(secretName);
+      const secretData = parseSecretString<{ apiKey: string; baseUrl?: string }>(secretValue);
+
+      const apiKey = typeof secretData?.apiKey === "string" ? secretData.apiKey : "";
+      const baseUrl =
+        typeof secretData?.baseUrl === "string" && secretData.baseUrl.trim()
+          ? secretData.baseUrl.trim()
+          : "https://api.bey.dev";
+      if (!apiKey) continue;
+
+      const resp = await fetch(`${baseUrl}/v1/calls?limit=50`, {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+        },
+      });
+
+      if (!resp.ok) continue;
+      const body = await readJsonOrText(resp);
+      const json = (body.json ?? null) as any;
+      const list: any[] = Array.isArray(json?.data) ? json.data : [];
+      const match = list.find((c: any) => String(c?.id ?? "") === callId);
+      const agentId = normalizeId(match?.agent_id ?? match?.agentId);
+      if (agentId) {
+        return { agentId, entityId };
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
+  return null;
 }
 
 const router = httpRouter();
@@ -114,35 +198,91 @@ router.route({
       }
 
       const eventType = payload?.event_type;
-      if (eventType === "test") {
+      const normalizedEventType =
+        typeof eventType === "string" ? eventType.trim().toLowerCase() : "";
+
+      const isTestEvent = normalizedEventType === "test";
+      const isMessageEvent =
+        normalizedEventType === "message" ||
+        normalizedEventType.startsWith("message") ||
+        normalizedEventType.endsWith("message");
+      const isCallEndedEvent =
+        normalizedEventType === "call_ended" ||
+        normalizedEventType === "call.ended" ||
+        normalizedEventType === "call-ended" ||
+        normalizedEventType.endsWith("call_ended") ||
+        normalizedEventType.endsWith("call.ended");
+
+      if (isTestEvent) {
         return jsonResponse(200, { ok: true });
       }
 
-      if (eventType !== "message" && eventType !== "call_ended") {
-        return jsonResponse(200, { ok: true });
-      }
+      // Beyond Presence may send additional events (e.g. call_started) that include
+      // call identifiers. We still want to create the call link early so later
+      // events (including call_ended) can be processed even if agentId is omitted.
 
-      const callId: string | undefined =
-        payload?.call_id ?? payload?.callId ?? payload?.call?.id;
+      const callId: string | undefined = extractCallId(payload);
       if (!callId) {
+        console.warn("[beyond-presence/webhook] Missing callId in payload", {
+          eventType,
+          keys: Object.keys(payload ?? {}),
+          callKeys: Object.keys(payload?.call ?? {}),
+          callDataKeys: Object.keys(payload?.call_data ?? {}),
+        });
         return jsonResponse(200, { ok: true });
       }
+
+      console.log("[beyond-presence/webhook] Incoming", {
+        eventType,
+        normalizedEventType,
+        callId,
+        hasCall: Boolean(payload?.call),
+        hasCallData: Boolean(payload?.call_data),
+      });
 
       let link = await ctx.runQuery(systemApi.beyondPresenceCallLinks.getByCallId, {
         callId,
       });
 
+      if (link) {
+        console.log("[beyond-presence/webhook] Found existing link", {
+          callId,
+          conversationId: link.conversationId,
+        });
+      }
+
       if (!link) {
         let agentId: string | undefined = extractAgentId(payload);
+        const originalAgentId = agentId;
         const userName: string | undefined = extractUserName(payload);
 
         if (!agentId) {
-          console.warn("[beyond-presence/webhook] Missing agentId in payload", {
+          console.warn("[beyond-presence/webhook] Missing agentId in payload; attempting to resolve by callId", {
             callId,
+            eventType,
             keys: Object.keys(payload ?? {}),
+            callKeys: Object.keys(payload?.call ?? {}),
+            callDataKeys: Object.keys(payload?.call_data ?? {}),
           });
-          return jsonResponse(200, { ok: true });
+
+          const resolved = await resolveAgentIdByCallId(ctx, callId);
+          if (resolved?.agentId) {
+            agentId = resolved.agentId;
+            console.log("[beyond-presence/webhook] Resolved agentId from calls list", {
+              callId,
+              agentId,
+              entityId: resolved.entityId,
+            });
+          } else {
+            // Can't create a link without an agentId, but we still ACK the webhook.
+            return jsonResponse(200, { ok: true });
+          }
         }
+
+        console.log("[beyond-presence/webhook] Creating link", {
+          callId,
+          agentId,
+        });
 
         const languageAgent = await ctx.runQuery(
           systemApi.beyondPresenceLanguageAgents.getByAgentId,
@@ -155,75 +295,122 @@ router.route({
           agentId = languageAgent.baseAgentId;
         }
 
-        const chatbots = await ctx.runQuery(
+        let chatbots = await ctx.runQuery(
           systemApi.chatbots.getManyByBeyondPresenceAgentId,
           {
             beyondPresenceAgentId: agentId,
           },
         );
 
+        if ((!chatbots || chatbots.length === 0) && originalAgentId && originalAgentId !== agentId) {
+          chatbots = await ctx.runQuery(
+            systemApi.chatbots.getManyByBeyondPresenceAgentId,
+            {
+              beyondPresenceAgentId: originalAgentId,
+            },
+          );
+        }
+
         if (!chatbots || chatbots.length === 0) {
           console.warn("[beyond-presence/webhook] No chatbots found for agentId", {
             callId,
             agentId,
+            originalAgentId,
           });
           return jsonResponse(200, { ok: true });
         }
 
-        const primaryOrgId = chatbots[0]?.organizationId;
+        const primaryOrgId = chatbots[0]?.entityId;
         const allSameOrg = chatbots.every(
-          (c: any) => c.organizationId === primaryOrgId,
+          (c: any) => c.entityId === primaryOrgId,
         );
         if (!primaryOrgId || !allSameOrg) {
-          return jsonResponse(200, { ok: true });
-        }
-
-        const existingConversation = await ctx.runQuery(
-          systemApi.beyondPresenceCallLinks.findLatestUnlinkedConversationForChatbots,
-          {
-            organizationId: primaryOrgId,
-            chatbotIds: chatbots.map((c: any) => c._id),
-            createdAfter: Date.now() - 15 * 60 * 1000,
-          },
-        );
-
-        if (existingConversation) {
-          await ctx.runMutation(systemApi.beyondPresenceCallLinks.createLink, {
+          console.warn("[beyond-presence/webhook] Chatbots org mismatch for agentId", {
             callId,
-            conversationId: existingConversation.conversationId,
-            threadId: existingConversation.threadId,
-          });
-
-          link = await ctx.runQuery(systemApi.beyondPresenceCallLinks.getByCallId, {
-            callId,
+            agentId,
+            organizations: chatbots.map((c: any) => c.entityId),
           });
         }
 
         if (!link) {
           const chatbot = chatbots[0];
-          const { threadId } = await supportAgent.createThread(ctx, {
-            userId: chatbot.organizationId,
-          });
+          if (!chatbot?.entityId) {
+            console.warn("[beyond-presence/webhook] Chatbot missing entityId", {
+              callId,
+              agentId,
+              chatbotId: chatbot?._id,
+            });
+            return jsonResponse(200, { ok: true });
+          }
 
-          await ctx.runMutation(systemApi.beyondPresenceCallLinks.createConversationAndLink, {
-            callId,
-            threadId,
-            organizationId: chatbot.organizationId,
-            chatbotId: chatbot._id,
-            userName,
-          });
+          // If the web widget already created a pending video conversation, attach the call to it.
+          // This ensures transcripts appear in the widget inbox (same contactSessionId).
+          try {
+            const candidate = await ctx.runQuery(
+              systemApi.beyondPresenceCallLinks.findLatestUnlinkedConversationForChatbots,
+              {
+                entityId: chatbot.entityId,
+                chatbotIds: chatbots.map((c: any) => c._id),
+                createdAfter: Date.now() - 10 * 60 * 1000,
+              },
+            );
+
+            if (candidate?.conversationId && candidate?.threadId) {
+              await ctx.runMutation(systemApi.beyondPresenceCallLinks.createLink, {
+                callId,
+                conversationId: candidate.conversationId,
+                threadId: candidate.threadId,
+              });
+            } else {
+              const { threadId } = await supportAgent.createThread(ctx, {
+                // Use a per-call userId to avoid reusing a previous thread's message history.
+                userId: `${chatbot.entityId}_${callId}`,
+              });
+
+              await ctx.runMutation(systemApi.beyondPresenceCallLinks.createConversationAndLink, {
+                callId,
+                threadId,
+                entityId: chatbot.entityId,
+                chatbotId: chatbot._id,
+                userName,
+              });
+            }
+          } catch (error) {
+            console.error("[beyond-presence/webhook] Failed to link/create conversation", {
+              callId,
+              agentId,
+              entityId: chatbot.entityId,
+              chatbotId: chatbot._id,
+              error,
+            });
+            return jsonResponse(200, { ok: true });
+          }
 
           link = await ctx.runQuery(systemApi.beyondPresenceCallLinks.getByCallId, {
             callId,
           });
 
           if (!link) {
+            console.error("[beyond-presence/webhook] Link still missing after creation", {
+              callId,
+              agentId,
+            });
             return jsonResponse(200, { ok: true });
           }
+
+          console.log("[beyond-presence/webhook] Link created", {
+            callId,
+            conversationId: link.conversationId,
+          });
         }
       }
 
-      if (eventType === "message") {
+      // If this is an event we don't process into transcript messages, stop here.
+      if (!isMessageEvent && !isCallEndedEvent) {
+        return jsonResponse(200, { ok: true });
+      }
+
+      if (isMessageEvent) {
         const body = payload as WebhookMessageEvent;
         const sentAtMsRaw = toMillis((body as any)?.message?.sent_at);
         const sentAtMs = sentAtMsRaw ?? Date.now();
@@ -264,15 +451,28 @@ router.route({
       }
 
       const body = payload as WebhookCallEndedEvent;
-      const messages = Array.isArray(body.messages) ? body.messages : [];
+      const messages =
+        (Array.isArray((body as any).messages) ? (body as any).messages : null) ??
+        (Array.isArray((payload as any)?.call?.messages)
+          ? (payload as any).call.messages
+          : null) ??
+        (Array.isArray((payload as any)?.call_data?.messages)
+          ? (payload as any).call_data.messages
+          : null) ??
+        (Array.isArray((payload as any)?.transcript) ? (payload as any).transcript : []);
 
-      const sorted = messages
-        .map((m) => ({ ...m, sentAtMs: toMillis((m as any).sent_at) }))
-        .sort((a, b) => {
-          const ax = a.sentAtMs ?? Number.POSITIVE_INFINITY;
-          const bx = b.sentAtMs ?? Number.POSITIVE_INFINITY;
-          return ax - bx;
-        });
+      const sorted: Array<any & { sentAtMs: number | null }> = (messages as any[])
+        .map((m: any) => ({ ...m, sentAtMs: toMillis((m as any).sent_at) }))
+        .sort(
+          (
+            a: any & { sentAtMs?: number | null },
+            b: any & { sentAtMs?: number | null },
+          ) => {
+            const ax = a.sentAtMs ?? Number.POSITIVE_INFINITY;
+            const bx = b.sentAtMs ?? Number.POSITIVE_INFINITY;
+            return ax - bx;
+          },
+        );
 
       for (const m of sorted) {
         const sentAtMs = (m.sentAtMs as number | null) ?? Date.now();
@@ -314,6 +514,12 @@ router.route({
         });
         if (!link) break;
       }
+
+      // Even if Beyond Presence doesn't provide messages in the call_ended event,
+      // we should still un-hide the conversation in the dashboard.
+      await ctx.runMutation(systemApi.conversations.markTranscriptReady, {
+        conversationId: link.conversationId,
+      });
 
       const endedAt = Date.now();
       await ctx.runMutation(systemApi.beyondPresenceCallLinks.markEnded, {

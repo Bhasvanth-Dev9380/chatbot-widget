@@ -8,18 +8,22 @@ export const upsert = action({
       v.literal("vapi"),
       v.literal("beyond_presence"),
       v.literal("salesforce"),
+      v.literal("zoho_desk"),
+      v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     value: v.any(),
     // ✅ orgId from client
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     // Run synchronously so the plugin is created immediately
     await ctx.runAction(internal.system.secrets.upsert, {
       service: args.service as any,
-      organizationId: orgId,
+      entityId: orgId,
       value: args.value,
     });
   },

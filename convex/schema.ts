@@ -34,13 +34,12 @@ export default defineSchema({
     email: v.string(),
     authId: v.string(),
     entityId: v.optional(v.string()),
-    organizationId: v.string(),
-  }).index("by_organization_id", ["organizationId"]),
+    organizationId: v.optional(v.string()),
+  }).index("by_entity_id", ["entityId"]),
 
   /* ───────── CHATBOTS ───────── */
   chatbots: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.optional(v.string()),
+    entityId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
     knowledgeBaseId: v.optional(v.id("knowledgeBases")),
@@ -68,16 +67,15 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_organization_and_active", ["organizationId", "isActive"])
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_and_active", ["entityId", "isActive"])
     .index("by_knowledge_base_id", ["knowledgeBaseId"])
     .index("by_chatbot_id", ["chatbotId"])
     .index("by_beyond_presence_agent_id", ["beyondPresenceAgentId"]),
 
   /* ───────── KNOWLEDGE BASES ───────── */
   knowledgeBases: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
 
@@ -90,14 +88,13 @@ export default defineSchema({
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
   })
-    .index("by_organization_id", ["organizationId"])
+    .index("by_entity_id", ["entityId"])
     .index("by_rag_namespace", ["ragNamespace"])
     .index("by_knowledge_base_id", ["knowledgeBaseId"]),
 
   /* ───────── WIDGET SETTINGS ───────── */
   widgetSettings: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     greetMessage: v.string(),
     defaultSuggestions: v.object({
       suggestion1: v.optional(v.string()),
@@ -112,30 +109,34 @@ export default defineSchema({
     chatbotName: v.optional(v.string()),
     customSystemPrompt: v.optional(v.string()),
     appearance: v.optional(appearanceSchema),
-  }).index("by_organization_id", ["organizationId"]),
+  }).index("by_entity_id", ["entityId"]),
 
   /* ───────── PLUGINS ───────── */
   plugins: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     service: v.union(
       v.literal("vapi"),
       v.literal("beyond_presence"),
       v.literal("salesforce"),
+      v.literal("zoho_desk"),
+      v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     secretName: v.string(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_organization_id_and_service", ["organizationId", "service"]),
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_id_and_service", ["entityId", "service"]),
 
   /* ───────── CONVERSATIONS ───────── */
   conversations: defineTable({
     threadId: v.string(),
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.id("chatbots")),
     caseId: v.optional(v.string()),
+    zohoDeskTicketId: v.optional(v.string()),
+    hubspotTicketId: v.optional(v.string()),
     status: v.union(
       v.literal("unresolved"),
       v.literal("escalated"),
@@ -147,19 +148,20 @@ export default defineSchema({
     isTranscriptPending: v.optional(v.boolean()),
     json: v.optional(v.string()),
   })
-    .index("by_organization_id", ["organizationId"])
+    .index("by_entity_id", ["entityId"])
     .index("by_contact_session_id", ["contactSessionId"])
     .index("by_thread_id", ["threadId"])
-    .index("by_status_and_organization_id", ["status", "organizationId"])
+    .index("by_status_and_entity_id", ["status", "entityId"])
     .index("by_case_id", ["caseId"])
+    .index("by_zoho_desk_ticket_id", ["zohoDeskTicketId"])
+    .index("by_hubspot_ticket_id", ["hubspotTicketId"])
     .index("by_chatbot_id", ["chatbotId"]),
 
   /* ───────── CONTACT SESSIONS ───────── */
   contactSessions: defineTable({
     name: v.string(),
     email: v.string(),
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     expiresAt: v.number(),
     metadata: v.optional(
       v.object({
@@ -178,13 +180,12 @@ export default defineSchema({
       })
     ),
   })
-    .index("by_organization_id", ["organizationId"])
+    .index("by_entity_id", ["entityId"])
     .index("by_expires_at", ["expiresAt"]),
 
   /* ───────── NOTIFICATIONS ───────── */
   notifications: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     type: v.union(
       v.literal("file_ready"),
       v.literal("file_failed"),
@@ -197,37 +198,34 @@ export default defineSchema({
     read: v.boolean(),
     createdAt: v.number(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_organization_id_and_read", ["organizationId", "read"])
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_id_and_read", ["entityId", "read"])
     .index("by_created_at", ["createdAt"]),
 
   /* ───────── FILE CHANGE TRACKER ───────── */
   fileChangeTracker: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.optional(v.string()),
     lastChange: v.number(),
     changeType: v.string(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_org_and_kb", ["organizationId", "knowledgeBaseId"]),
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_and_kb", ["entityId", "knowledgeBaseId"]),
 
   /* ───────── DELETED FILES (TOMBSTONES) ───────── */
   deletedFiles: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     knowledgeBaseId: v.optional(v.string()),
     storageId: v.id("_storage"),
     deletedAt: v.number(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_org_and_kb", ["organizationId", "knowledgeBaseId"])
-    .index("by_org_and_storage", ["organizationId", "storageId"]),
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_and_kb", ["entityId", "knowledgeBaseId"])
+    .index("by_entity_and_storage", ["entityId", "storageId"]),
 
   /* ───────── VOICE TRANSCRIPTS ───────── */
   voiceTranscripts: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     conversationId: v.optional(v.id("conversations")),
     contactSessionId: v.id("contactSessions"),
     chatbotId: v.optional(v.id("chatbots")),
@@ -243,7 +241,7 @@ export default defineSchema({
     startedAt: v.number(),
     endedAt: v.optional(v.number()),
   })
-    .index("by_organization_id", ["organizationId"])
+    .index("by_entity_id", ["entityId"])
     .index("by_conversation_id", ["conversationId"])
     .index("by_contact_session_id", ["contactSessionId"])
     .index("by_chatbot_id", ["chatbotId"]),
@@ -261,18 +259,17 @@ export default defineSchema({
 
   beyondPresenceLanguageAgents: defineTable({
     entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    organizationId: v.optional(v.string()),
     baseAgentId: v.string(),
     language: v.string(),
     agentId: v.string(),
     createdAt: v.number(),
   })
-    .index("by_org_base_language", ["organizationId", "baseAgentId", "language"])
+    .index("by_entity_base_language", ["entityId", "baseAgentId", "language"])
     .index("by_agent_id", ["agentId"]),
 
   tokenUsageEvents: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     provider: v.string(),
     model: v.optional(v.string()),
     kind: v.optional(v.string()),
@@ -281,30 +278,28 @@ export default defineSchema({
     totalTokens: v.number(),
     createdAt: v.number(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_org_and_created_at", ["organizationId", "createdAt"]),
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_and_created_at", ["entityId", "createdAt"]),
 
   tokenUsageDaily: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     dayStart: v.number(),
     provider: v.string(),
     totalTokens: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_org_and_day", ["organizationId", "dayStart"])
-    .index("by_org_day_provider", ["organizationId", "dayStart", "provider"]),
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_and_day", ["entityId", "dayStart"])
+    .index("by_entity_day_provider", ["entityId", "dayStart", "provider"]),
 
   convexUsageEstimatedDaily: defineTable({
-    entityId: v.optional(v.string()),
-    organizationId: v.string(),
+    entityId: v.string(),
     dayStart: v.number(),
     databaseBytes: v.number(),
     vectorBytes: v.number(),
     fileBytes: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_organization_id", ["organizationId"])
-    .index("by_org_and_day", ["organizationId", "dayStart"]),
+    .index("by_entity_id", ["entityId"])
+    .index("by_entity_and_day", ["entityId", "dayStart"]),
 });

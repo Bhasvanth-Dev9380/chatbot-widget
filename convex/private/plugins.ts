@@ -7,17 +7,21 @@ export const remove = mutation({
       v.literal("vapi"),
       v.literal("beyond_presence"),
       v.literal("salesforce"),
+      v.literal("zoho_desk"),
+      v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     // ✅ orgId now comes from the client (BetterAuth → Convex user)
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     const existingPlugin = await ctx.db
       .query("plugins")
-      .withIndex("by_organization_id_and_service", (q) =>
-        q.eq("organizationId", orgId).eq("service", args.service),
+      .withIndex("by_entity_id_and_service", (q) =>
+        q.eq("entityId", orgId).eq("service", args.service),
       )
       .unique();
 
@@ -38,17 +42,21 @@ export const getOne = query({
       v.literal("vapi"),
       v.literal("beyond_presence"),
       v.literal("salesforce"),
+      v.literal("zoho_desk"),
+      v.literal("slack"),
+      v.literal("clover"),
+      v.literal("hubspot"),
     ),
     // ✅ orgId from client
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     return await ctx.db
       .query("plugins")
-      .withIndex("by_organization_id_and_service", (q) =>
-        q.eq("organizationId", orgId).eq("service", args.service),
+      .withIndex("by_entity_id_and_service", (q) =>
+        q.eq("entityId", orgId).eq("service", args.service),
       )
       .unique();
   },

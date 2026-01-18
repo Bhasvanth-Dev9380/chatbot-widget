@@ -6,7 +6,7 @@ import { ArrowLeft, MenuIcon } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   conversationIdAtom,
-  organizationIdAtom,
+  entityIdAtom,
   contactSessionIdAtomFamily,
   screenAtom,
   isVoiceConversationAtom,
@@ -62,10 +62,10 @@ export const WidgetChatScreen = () => {
   const assistantLogoUrl = widgetSettings?.appearance?.logo?.url;
 
   const conversationId = useAtomValue(conversationIdAtom);
-  const organizationId = useAtomValue(organizationIdAtom);
+  const entityId = useAtomValue(entityIdAtom);
   const isVoiceConversation = useAtomValue(isVoiceConversationAtom);
   const contactSessionId = useAtomValue(
-    contactSessionIdAtomFamily(organizationId || "")
+    contactSessionIdAtomFamily(entityId || "")
   );
 
   const [optimisticMessage, setOptimisticMessage] = useState<OptimisticMessage | null>(null);

@@ -45,10 +45,10 @@ export const screenAtom = atom<WidgetScreen>("loading");
 export const isVoiceConversationAtom = atom(false);
 export const errorMessageAtom = atom<string | null>(null);
 export const loadingMessageAtom = atom<string | null>(null);
-export const organizationIdAtom = atom<string | null>(null);
+export const entityIdAtom = atom<string | null>(null);
 export const chatbotIdAtom = atom<string | null>(null);
-export const contactSessionIdAtomFamily = atomFamily((organizationId: string) => {
-     return atomWithStorage<Id<"contactSessions"> | null>(`${CONTACT_SESSION_KEY}_${organizationId}`,
+export const contactSessionIdAtomFamily = atomFamily((entityId: string) => {
+     return atomWithStorage<Id<"contactSessions"> | null>(`${CONTACT_SESSION_KEY}_${entityId}`,
         null)
 });
 

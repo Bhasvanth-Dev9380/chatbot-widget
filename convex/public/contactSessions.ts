@@ -8,7 +8,7 @@ export const create = mutation({
   args: {
     name: v.string(),
     email: v.string(),
-    organizationId: v.string(),
+    entityId: v.string(),
     metadata: v.optional(
       v.object({
         userAgent: v.optional(v.string()),
@@ -33,7 +33,7 @@ export const create = mutation({
         const contactSessionId = await ctx.db.insert("contactSessions", {
         name: args.name,
         email: args.email,
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         expiresAt,
         metadata: args.metadata,
         });

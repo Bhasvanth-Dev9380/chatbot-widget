@@ -3,13 +3,13 @@ import { mutation, query } from "../_generated/server";
 
 /**
  * Widget Settings
- * Auth model: organizationId is passed from client (BetterAuth)
+ * Auth model: entityId is passed from client (BetterAuth)
  * Behavior aligned EXACTLY with reference implementation
  */
 
 export const upsert = mutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
 
     chatbotName: v.optional(v.string()),
     greetMessage: v.string(),
@@ -41,19 +41,19 @@ export const upsert = mutation({
   },
 
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     if (!orgId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Organization ID missing",
+        message: "Entity ID missing",
       });
     }
 
     const existing = await ctx.db
       .query("widgetSettings")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", orgId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", orgId),
       )
       .unique();
 
@@ -70,7 +70,7 @@ export const upsert = mutation({
     } else {
       // ➕ INSERT (exactly like reference)
       await ctx.db.insert("widgetSettings", {
-        organizationId: orgId,
+        entityId: orgId,
         chatbotName: args.chatbotName,
         greetMessage: args.greetMessage,
         customSystemPrompt: args.customSystemPrompt,
@@ -84,23 +84,23 @@ export const upsert = mutation({
 
 export const getOne = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
 
   handler: async (ctx, args) => {
-    const orgId = args.organizationId;
+    const orgId = args.entityId;
 
     if (!orgId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Organization ID missing",
+        message: "Entity ID missing",
       });
     }
 
     return await ctx.db
       .query("widgetSettings")
-      .withIndex("by_organization_id", (q) =>
-        q.eq("organizationId", orgId),
+      .withIndex("by_entity_id", (q) =>
+        q.eq("entityId", orgId),
       )
       .unique();
   },

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   widgetSettingsAtom,
   screenAtom,
-  organizationIdAtom,
+  entityIdAtom,
   contactSessionIdAtomFamily,
   videoCallLanguageAtomFamily,
 } from "@/modules/widget/atoms/widget-atoms";
@@ -19,9 +19,9 @@ export const WidgetAvatarScreen = () => {
   const setScreen = useSetAtom(screenAtom);
   const widgetSettings = useAtomValue(widgetSettingsAtom);
 
-  const organizationId = useAtomValue(organizationIdAtom);
+  const entityId = useAtomValue(entityIdAtom);
   const contactSessionId = useAtomValue(
-    contactSessionIdAtomFamily(organizationId || ""),
+    contactSessionIdAtomFamily(entityId || ""),
   );
 
   const contactSessionKey = contactSessionId ? String(contactSessionId) : "";
@@ -42,14 +42,14 @@ export const WidgetAvatarScreen = () => {
     let cancelled = false;
 
     const run = async () => {
-      if (!organizationId || !baseAgentId) {
+      if (!entityId || !baseAgentId) {
         setResolvedAgentId(null);
         return;
       }
 
       try {
         const result = await resolveLanguageAgent({
-          organizationId,
+          entityId,
           baseAgentId,
           language: selectedLanguage,
         });
@@ -69,7 +69,7 @@ export const WidgetAvatarScreen = () => {
     return () => {
       cancelled = true;
     };
-  }, [organizationId, baseAgentId, selectedLanguage, resolveLanguageAgent]);
+  }, [entityId, baseAgentId, selectedLanguage, resolveLanguageAgent]);
 
   const agentIdToUse = resolvedAgentId ?? baseAgentId ?? null;
 

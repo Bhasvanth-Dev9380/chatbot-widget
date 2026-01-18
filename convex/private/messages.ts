@@ -14,7 +14,7 @@ import { OPERATOR_MESSAGE_ENHANCEMENT_PROMPT } from "../system/ai/constants";
 export const enhanceResponse = action({
   args: {
     prompt: v.string(),
-    organizationId: v.string(), // passed from BetterAuth
+    entityId: v.string(), // passed from BetterAuth
   },
   handler: async (ctx, args) => {
     const response = await generateText({
@@ -39,7 +39,7 @@ export const enhanceResponse = action({
 
     if (totalTokens > 0) {
       await ctx.runMutation((internal as any).system.tokenUsage.record, {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         provider: "openai",
         model: "gpt-4o-mini",
         kind: "operator_enhance",
@@ -82,13 +82,13 @@ export const create = action({
   args: {
     prompt: v.string(),
     conversationId: v.id("conversations"),
-    organizationId: v.string(), // BetterAuth → Convex user
+    entityId: v.string(), // BetterAuth → Convex user
     agentName: v.string(),      // operator display name
   },
   handler: async (ctx, args) => {
     const conversation = await ctx.runQuery(api.private.conversations.getOne, {
       conversationId: args.conversationId,
-      organizationId: args.organizationId,
+      entityId: args.entityId,
     });
 
     if (conversation.status === "resolved") {
@@ -113,7 +113,7 @@ export const create = action({
     try {
       if (conversation.caseId) {
         await ctx.runAction(api.private.salesforce.addInternalCaseComment, {
-          organizationId: args.organizationId,
+          entityId: args.entityId,
           caseNumberOrId: conversation.caseId,
           commentBody: `${`Agent (${args.agentName}):`} ${String(args.prompt ?? "")}`.trim(),
         });
@@ -133,7 +133,7 @@ export const create = action({
 export const getMany = query({
   args: {
     threadId: v.string(),
-    organizationId: v.string(),
+    entityId: v.string(),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -149,10 +149,10 @@ export const getMany = query({
       });
     }
 
-    if (conversation.organizationId !== args.organizationId) {
+    if (conversation.entityId !== args.entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 

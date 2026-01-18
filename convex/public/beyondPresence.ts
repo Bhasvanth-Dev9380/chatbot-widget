@@ -4,7 +4,7 @@ import { internal } from "../_generated/api";
 
 export const getOrCreateLanguageAgent = action({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     baseAgentId: v.string(),
     language: v.string(),
   },
@@ -12,7 +12,7 @@ export const getOrCreateLanguageAgent = action({
     const result = await ctx.runAction(
       (internal as any).private.beyondPresence.getOrCreateLanguageAgent,
       {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         baseAgentId: args.baseAgentId,
         language: args.language,
       },

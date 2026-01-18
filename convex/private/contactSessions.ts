@@ -4,12 +4,12 @@ import { query } from "../_generated/server";
 export const getOneByConversationId = query({
   args: {
     conversationId: v.id("conversations"),
-    organizationId: v.string(), // 👈 now required
+    entityId: v.string(), // 👈 now required
   },
   handler: async (ctx, args) => {
-    const { conversationId, organizationId } = args;
+    const { conversationId, entityId } = args;
 
-    if (!organizationId) {
+    if (!entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
         message: "Organization not provided",
@@ -25,10 +25,10 @@ export const getOneByConversationId = query({
       });
     }
 
-    if (conversation.organizationId !== organizationId) {
+    if (conversation.entityId !== entityId) {
       throw new ConvexError({
         code: "UNAUTHORIZED",
-        message: "Invalid Organization ID",
+        message: "Invalid Entity ID",
       });
     }
 

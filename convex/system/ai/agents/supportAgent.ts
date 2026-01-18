@@ -1,7 +1,7 @@
 import { openai } from "@ai-sdk/openai";
 import { Agent } from "@convex-dev/agent";
 import { components } from "../../../_generated/api";
-import { escalateConversation } from "../tools/escalateConversation";
+import { cloverCreateOrder, cloverGetOrder, cloverListOrders, cloverSearchItems } from "../tools/cloverOrders";
 import { resolveConversation } from "../tools/resolveConversation";
 import { search } from "../tools/search";
 import { SUPPORT_AGENT_PROMPT } from "../constants";
@@ -12,7 +12,10 @@ export const supportAgent = new Agent(components.agent, {
   instructions: SUPPORT_AGENT_PROMPT,
   tools: {
     search,
+    cloverListOrders,
+    cloverGetOrder,
+    cloverSearchItems,
+    cloverCreateOrder,
     resolveConversation,
-    escalateConversation,
   },
 });

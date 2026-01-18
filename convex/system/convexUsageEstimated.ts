@@ -8,7 +8,7 @@ function dayStartUtc(ms: number): number {
 
 export const record = internalMutation({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
     databaseBytes: v.optional(v.number()),
     vectorBytes: v.optional(v.number()),
     fileBytes: v.optional(v.number()),
@@ -26,14 +26,14 @@ export const record = internalMutation({
 
     const existing = await ctx.db
       .query("convexUsageEstimatedDaily")
-      .withIndex("by_org_and_day", (q) =>
-        q.eq("organizationId", args.organizationId).eq("dayStart", dayStart),
+      .withIndex("by_entity_and_day", (q) =>
+        q.eq("entityId", args.entityId).eq("dayStart", dayStart),
       )
       .unique();
 
     if (!existing) {
       await ctx.db.insert("convexUsageEstimatedDaily", {
-        organizationId: args.organizationId,
+        entityId: args.entityId,
         dayStart,
         databaseBytes: deltaDb,
         vectorBytes: deltaVector,

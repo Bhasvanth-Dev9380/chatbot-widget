@@ -18,7 +18,7 @@ function dayStartUtc(ms: number): number {
 
 export const getMonthToDate = query({
   args: {
-    organizationId: v.string(),
+    entityId: v.string(),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -27,8 +27,8 @@ export const getMonthToDate = query({
 
     const rows = await ctx.db
       .query("convexUsageEstimatedDaily")
-      .withIndex("by_org_and_day", (q) =>
-        q.eq("organizationId", args.organizationId).gte("dayStart", from).lt("dayStart", to),
+      .withIndex("by_entity_and_day", (q) =>
+        q.eq("entityId", args.entityId).gte("dayStart", from).lt("dayStart", to),
       )
       .collect();
 
