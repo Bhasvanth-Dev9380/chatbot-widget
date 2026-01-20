@@ -1,0 +1,135 @@
+name: Build and Deploy to Cloud Run
+
+on:
+  push:
+    branches:
+      - qa
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  environment: qa
+
+jobs:
+  setup-infra:
+    uses: Spinabot-v2/spinabot-infrastructure/.github/workflows/terraform.yml@main
+    with:
+      environment: qa
+      github_branch: ${{ github.ref_name }}
+      github_org: ${{ github.repository_owner }}
+      github_repo: ${{ github.event.repository.name }}
+      app_name: chatbot-widget
+      artifact_registry: chatbot-widget
+    secrets: inherit
+
+  build-and-deploy:
+    needs: [setup-infra]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Authenticate and Fetch Common Vault Secrets via Token
+        uses: hashicorp/vault-action@v2.5.0
+        with:
+          url: https://vault.spinabot.com
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            kv/spinabot/qa/common-Infra pool_without_provider | pool_full_path;
+            kv/spinabot/qa/common-Infra github_secrets_sa | github_secrets_sa;
+            kv/spinabot/qa/common-Infra project_id | GCP_PROJECT_ID;
+            kv/spinabot/qa/common-Infra github_builder_sa | github_builder_sa;
+            kv/spinabot/qa/common-Infra github_deployer_sa | github_deployer_sa;
+            kv/spinabot/qa/common-Infra region | region;
+            kv/spinabot/qa/app-secrets/chatbot-widget/runtime NEXT_PUBLIC_CONVEX_URL | NEXT_PUBLIC_CONVEX_URL;
+
+      - name: Authenticate and Fetch Terrafrom generated outputs
+        uses: hashicorp/vault-action@v2.5.0
+        with:
+          url: https://vault.spinabot.com
+          token: ${{ secrets.VAULT_TOKEN }}
+          secrets: |
+            kv/spinabot/qa/app-secrets/chatbot-widget/tf-generated artifact_registry_url | artifact_registry_url;
+            kv/spinabot/qa/app-secrets/chatbot-widget/tf-generated provider_id | provider_id;
+            kv/spinabot/qa/app-secrets/chatbot-widget/tf-generated serviceAccount       | CLOUD_RUN_RUNTIME_SA;
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+
+      - name: Authenticate via WIF for Build
+        id: auth-build
+        uses: google-github-actions/auth@v0.4.0
+        with:
+          workload_identity_provider: ${{ env.pool_full_path }}/providers/${{ env.provider_id}}
+          service_account: ${{ env.github_secrets_sa}}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Set env's in runner environment
+        run: |
+          echo "VAULT_TOKEN=${{ secrets.VAULT_TOKEN }}" >> $GITHUB_ENV
+          echo "VAULT_ADDR=https://vault.spinabot.com" >> $GITHUB_ENV
+          echo "VAULT_KV_MOUNT=kv" >> $GITHUB_ENV
+          echo "VAULT_SECRET_PATH=spinabot/qa/app-secrets/chatbot-widget/runtime" >> $GITHUB_ENV
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+ 
+
+   
+
+      - name: Authenticate via WIF for Build and Push
+        id: auth-build-push
+        uses: google-github-actions/auth@v0.4.0
+        with:
+          workload_identity_provider: ${{ env.pool_full_path }}/providers/${{ env.provider_id}}
+          service_account: ${{ env.github_builder_sa }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          token_format: "access_token"
+          access_token_scopes: "https://www.googleapis.com/auth/cloud-platform"
+          create_credentials_file: true
+
+      - name: Re-configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{env.region}}-docker.pkg.dev --quiet
+        env:
+          CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE: ${{ steps.auth-build-push.outputs.credentials_file_path }}
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_CONVEX_URL="${{ env.NEXT_PUBLIC_CONVEX_URL }}" \
+            -t "${{ env.artifact_registry_url }}/qa-chatbot-widget:latest" \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push "${{env.artifact_registry_url}}/${{env.environment}}-chatbot-widget:latest"
+      - name: Authenticate via WIF for Deployment
+        id: auth-deploy
+        uses: google-github-actions/auth@v0.4.0
+        with:
+          workload_identity_provider: ${{ env.pool_full_path }}/providers/${{ env.provider_id}}
+          service_account: ${{ env.github_deployer_sa}}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{env.environment}}-chatbot-widget \
+            --image "${{env.artifact_registry_url}}/${{env.environment}}-chatbot-widget:latest" \
+            --region ${{env.region}} \
+            --platform managed \
+            --allow-unauthenticated \
+            --vpc-connector=qa-vpc-connector \
+            --vpc-egress=all-traffic \
+            --service-account="${{env.CLOUD_RUN_RUNTIME_SA}}" \
+            --set-env-vars="VAULT_TOKEN=${{ secrets.VAULT_TOKEN }},VAULT_ADDR=https://vault.spinabot.com,VAULT_KV_MOUNT=kv,VAULT_SECRET_PATH=spinabot/qa/app-secrets/chatbot-widget/runtime"
